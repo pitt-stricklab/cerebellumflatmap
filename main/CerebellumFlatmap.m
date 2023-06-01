@@ -12,7 +12,7 @@ classdef CerebellumFlatmap < handle
     %                  testCreateBrainFlatMap.m
     %   2.0 - 20230601 a) Major updates and improvements. 
     %                  b) Added showBoundaries() and showCurvaturemap().
-    %
+    %                  c) Modified the figure appearance.
     
     properties (Access = private)
 
@@ -49,6 +49,9 @@ classdef CerebellumFlatmap < handle
 
         % Valid file extensions.
         pValidExtColorTable = ".ctbl";
+
+        % Default figure size.
+        pFigureSizeDefault = 1000;
         
     end
 
@@ -821,8 +824,8 @@ classdef CerebellumFlatmap < handle
 
         function hFig = createFigure(obj,image,colorMap,colorLabels,aspectRatioX)
 
-            hFig = figure;
-            
+            hFig = figure("Visible","off");
+
             % Show the flatmap.
             imshow(image,colorMap);
             colorbar( ...
@@ -836,10 +839,24 @@ classdef CerebellumFlatmap < handle
             axes = gca;
             axes.YDir = "normal";
             daspect(axes,[1,aspectRatioX,1]);
-            
+            axes.OuterPosition = [0,0,1,1];
+
+            % Set the figure size.
+            setFigurePositionXYWH(hFig, ...
+                [ ...
+                    200, ...
+                    200, ...
+                    obj.pFigureSizeDefault, ...
+                    obj.pFigureSizeDefault ...
+                ] ...
+            );
+
             % Set the x and y label.
-            xlabel('Slice index in the sagittal planes.');
-            ylabel('Distance from the origin line.');
+            xlabel("Index of Sagittal Plane Slices");
+            ylabel('Perimeter of Cerebellar Surface');
+
+            hFig.Visible = "on";
+            drawnow;
 
         end
 
