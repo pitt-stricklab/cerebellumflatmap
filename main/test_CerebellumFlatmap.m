@@ -35,7 +35,7 @@ labelsToRemove  = [ ...
 ];
 
 % A scaling ratio for stretching the flatmap in the X direction.
-aspectRatioX = 1.5; % Best practice: 10 for cortex, 1.5 for others
+aspectRatioX = 10; % Best practice: 10 for cortex, 1.5 for others
 
 % Boundary color name to show. (text scalar)
 boundaryColorName = "cyan";
