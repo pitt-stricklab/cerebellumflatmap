@@ -5,7 +5,7 @@
 %
 
 clear;
-close all;
+% close all;
 
 % A path of a 3D volume label image (ex .nii.gz).
 labelVolumePath = "C:\Users\Mitsu\Desktop\testCerebellumFlatMap\data\v4 PF with bridge\cerebellum_annotation_centered_refinedDirectionRAI_PC_WM_Cortex_connected_v3.nii.gz";
@@ -24,7 +24,7 @@ labelBridge      = 47; % Bridge lines between objects.
 labelWhiteMatter = 44;
 
 % Whether or not printing parsing results in the command window.
-verbose = true;
+verbose = false;
 
 % Labels to remove from the flatmap. Not specify this or specify [] to
 % disable it.
@@ -37,18 +37,44 @@ labelsToRemove  = [ ...
 % A scaling ratio for stretching the flatmap in the X direction.
 aspectRatioX = 10; % Best practice: 10 for cortex, 1.5 for others
 
-% Boundary color name to show. (text scalar)
-boundaryColorName = "cyan";
-
 % Whether or not showing boundaries in animation.
 animation = true;
 
-% Color names for curvature map.
-colorNameConcave = "blue";
-colorNameConvex  = "red";
+% Plot size for mapped (target) points.
+plotSizeTarget = 20;
+
+% Names of colors for figures. (text scalar)
+colorNameBoundary = "cyan";
+colorNameConcave  = "blue";
+colorNameConvex   = "red";
+colorNameTarget   = "green";
 
 % NOTE:
-% See plot() for the valid color names of the boundary and curvature map.
+% See plot() for the valid color names.
+
+%-------------------------------%
+
+% Temp to make source points.
+
+% % A path of a matlab file that stores coordinates of points within the
+% % volume.
+% pointPath = "C:\Users\Mitsu\Desktop\testCerebellumFlatMap\data\init_transformed_points.mat";
+
+% % Load the xyz coordinates of points. (double, numPoints x XYZ)
+% data = load(pointPath);
+% xyzSource = data.whole_section_plotted;
+
+lengY = 593;
+lengX = 422;
+lengZ = 364;
+
+numSamples = 300;
+
+xs = randperm(lengX,numSamples)';
+ys = randperm(lengY,numSamples)';
+zs = randperm(lengZ,numSamples)';
+
+xyzSource = [xs,ys,zs];
 
 %-------------------------------%
 
@@ -67,17 +93,17 @@ hCerebellumFlatmap.parse(verbose);
 
 %-------------------------------%
 
-% Show boundaries on each sagittal slice.
-hCerebellumFlatmap.showBoundaries( ...
-    colorTablePath, ...
-    colorName = boundaryColorName, ...
-    animation = animation ...
-);
+% % Show boundaries on each sagittal slice.
+% hCerebellumFlatmap.showBoundaries( ...
+%     colorTablePath, ...
+%     colorName = colorNameBoundary, ...
+%     animation = animation ...
+% );
 
 %-------------------------------%
 
 % Show a flatmap.
-hFig = hCerebellumFlatmap.showFlatmap( ...
+hFig1 = hCerebellumFlatmap.showFlatmap( ...
     colorTablePath, ...
     aspectRatioX = aspectRatioX, ...
     labelsToRemove = labelsToRemove ...
@@ -86,9 +112,24 @@ hFig = hCerebellumFlatmap.showFlatmap( ...
 %-------------------------------%
 
 % Show a curvature map.
-hFig = hCerebellumFlatmap.showCurvaturemap( ...
+hFig2 = hCerebellumFlatmap.showCurvaturemap( ...
     aspectRatioX = aspectRatioX, ...
     labelsToRemove = labelsToRemove, ...
     colorNameConcave = colorNameConcave, ...
     colorNameConvex = colorNameConvex ...
 );
+
+%-------------------------------%
+
+% Get the xy coordinates of the source points on the flatmap.
+xyTarget = hCerebellumFlatmap.mapPoints(xyzSource);
+
+% Show the mapped (target) points on the flatmap.
+hold on
+scatter( ...
+    xyTarget(:,1),xyTarget(:,2), ...
+    plotSizeTarget, ...
+    "filled", ...
+    "MarkerFaceColor",colorNameTarget ...
+);
+hold off
