@@ -14,6 +14,9 @@ classdef CerebellumFlatmap < handle
     %                  b) Added showBoundaries() and showCurvaturemap().
     %                  c) Modified the figure appearance.
     %   2.1 - 20230606 Added mapPoints().
+    %   2.2 - 20230608 a) Renamed showFlatmap() to showLabelFlatmap(), and
+    %                     showCurvaturemap() to showCurvatureFlatmap().
+    %                  b) Added showIntensityFlatmap().
     
     properties (Access = private)
 
@@ -97,12 +100,8 @@ classdef CerebellumFlatmap < handle
                 labelOrigin     {mustBeIntegerScalar}
                 labelBridge     {mustBeIntegerScalar}
             end
-
-            % Validate the file exists.
-            validatePathsExist(labelVolumePath);
             
-            % Load and store the 3D volume label image.
-            % (numeric, Y x X x Z)
+            % Load and store the 3D volume label data. (numeric, Y x X x Z)
             obj.pLabelVolume = niftiread(labelVolumePath);
 
             % Store the size of the volume.
@@ -305,7 +304,7 @@ classdef CerebellumFlatmap < handle
 
         end
 
-        function hFig = showFlatmap(obj,colorTablePath,options)
+        function hFig = showLabelFlatmap(obj,colorTablePath,options)
             %
             % Create and show a flatmap.
             %
@@ -341,38 +340,31 @@ classdef CerebellumFlatmap < handle
             % Validate the parsing of the volume data is done.
             obj.validateParsingDone();
 
-            % Validate the color lookup table file path.
+            % Validate the inputs.
             obj.validateColorTablePath(colorTablePath);
-
-            % Validate the aspect ratio for the x axis.
-            mustBeNumericScalar(aspectRatioX)
-            mustBeGreaterThanOrEqual(aspectRatioX,1);
-
-            % Validate the labels to be removed.
-            if ~isempty(labelsToRemove)
-                mustBePosInteger(labelsToRemove);
-            end
+            obj.validateAspectRatioX(aspectRatioX);
+            obj.validateLabelsToRemove(labelsToRemove);
 
             % Read the color map.
             % (uint8, numColors+1 x RGB), (string, numColors+1 x 1)
             [colorMap,colorLabels] = obj.readColorMap(colorTablePath);
 
-            % Create a flatmap. (uint8, M x N)
-            flatmap = obj.createFlatmap(labelsToRemove,false);            
+            % Create a label flatmap. (uint8, M x N)
+            labelFlatmap = obj.createFlatmap(labelsToRemove,"label");            
             
             % Show the flatmap.
             hFig = obj.createFigure( ...
-                flatmap, ...
-                colorMap, ...
-                colorLabels, ...
-                aspectRatioX ...
+                labelFlatmap, ...
+                aspectRatioX, ...
+                colorMap = colorMap, ...
+                colorLabels = colorLabels ...
             );
             
         end        
 
-        function hFig = showCurvaturemap(obj,options)
+        function hFig = showCurvatureFlatmap(obj,options)
             %
-            % Create and show a curvature map.
+            % Create and show a curvature flatmap.
             %
             % <Input>
             % OPTIONS
@@ -406,6 +398,10 @@ classdef CerebellumFlatmap < handle
             % Validate the parsing of the volume data is done.
             obj.validateParsingDone();
 
+            % Validate the inputs.
+            obj.validateAspectRatioX(aspectRatioX);
+            obj.validateLabelsToRemove(labelsToRemove);
+
             % Create a color map and color labels for a cuvature map.
             % (uint8, 3+1 x RGB), (string, 3+1 x 1)
             [colorMap,colorLabels] = createColorMapForCurvature(obj, ...
@@ -413,18 +409,80 @@ classdef CerebellumFlatmap < handle
                 colorNameConvex ...
             );
 
-            % Create a curvature map. (uint8, M x N)
-            curvaturemap = obj.createFlatmap(labelsToRemove,true);  
+            % Create a curvature flatmap. (uint8, M x N)
+            curvatureFlatmap = obj.createFlatmap(labelsToRemove,"curvature");  
 
-            % Show the curvature map.
+            % Show the flatmap.
             hFig = obj.createFigure( ...
-                curvaturemap, ...
-                colorMap, ...
-                colorLabels, ...
-                aspectRatioX ...
+                curvatureFlatmap, ...
+                aspectRatioX, ...
+                colorMap = colorMap, ...
+                colorLabels = colorLabels ...                
             );
 
         end
+
+        function hFig = showIntensityFlatmap(obj,intensityVolumePath,options)
+            %
+            % Create and show a intensity flatmap.
+            %
+            % <Input>
+            %   intensityVolumePath: (text scalar)
+            %       A path of a 3D volume intensity data aligned with the
+            %       label volume data (ex .nii.gz). 
+            % OPTIONS
+            %   aspectRatioX: (numeric, 1 x 1)
+            %       See showFlatmap().
+            %   labelsToRemove: (numeric, M x N)
+            %       See showFlatmap().
+            %
+            % <Output>
+            %   hFig: (matlab.ui.Figure, 1 x 1)
+            %       A figure handle of the flatmap.
+            %
+
+            arguments
+                obj {}
+                intensityVolumePath    {mustBeTextScalar}
+                options.aspectRatioX   {} = 1
+                options.labelsToRemove {} = []           
+            end
+
+            aspectRatioX   = options.aspectRatioX;
+            labelsToRemove = options.labelsToRemove;
+
+            % Validate the parsing of the volume data is done.
+            obj.validateParsingDone();
+
+            % Validate the inputs.
+            obj.validateAspectRatioX(aspectRatioX);
+            obj.validateLabelsToRemove(labelsToRemove);
+            
+            % Load the 3D volume intensity data. (numeric, Y x X x Z)
+            intensityVolume = niftiread(intensityVolumePath);
+
+            % Get the size of the volume.
+            [lengY,lengX,lengZ] = size(intensityVolume);
+
+            % Validate the size matches the label volume size.
+            if lengY ~= obj.pLengY || lengX ~= obj.pLengX || lengZ ~= obj.pLengZ
+                error( ...
+                    "The size of the intensity volume data must match the " + ...
+                    "label volume size." ...
+                );
+            end
+
+            % Create a intensity flatmap. (double, M x N)
+            intensityFlatmap = obj.createFlatmap( ...
+                labelsToRemove, ...
+                "intensity", ...
+                intensityVolume ...
+            );
+
+            % Show the flatmap.
+            hFig = obj.createFigure(intensityFlatmap,aspectRatioX);
+
+        end        
 
         function xyTarget = mapPoints(obj,xyzSource)
             %
@@ -786,10 +844,15 @@ classdef CerebellumFlatmap < handle
 
         % Creating flatmaps.
 
-        function flatmap = createFlatmap(obj,labelsToRemove,isCurvaturemap)
+        function flatmap = createFlatmap(obj,labelsToRemove,type,varargin)
 
-            % Initialize a flatmap. (uint8, M x numValidSlices)
-            flatmap = obj.initImage();
+            switch type
+                case "intensity"; precision = "double";
+                otherwise;        precision = "uint8";
+            end
+
+            % Initialize a flatmap. (numeric, M x numValidSlices)
+            flatmap = obj.initImage(precision);
 
             for i = 1:obj.pNumSagittalSlices
 
@@ -801,51 +864,75 @@ classdef CerebellumFlatmap < handle
                     continue;
                 end
 
-                if isCurvaturemap
+                switch type
 
-                    % Create labels based on curvature of each boundary
-                    % point for the curvature map.
-                    labelsToInsert = obj.createCurvatureLabels( ...
-                        obj.getBoundary(i) ...
-                    );
+                    case "label"
 
-                else
+                        % Use the brain region labels for the flatmap.
+                        valuesToInsert = labels;
 
-                    % Use the brain region labels for the flatmap.
-                    labelsToInsert = labels;
+                        valueToReplace = 0;
 
-                end                
+                    case "curvature"
+
+                        % Create labels based on curvature of each boundary
+                        % point for the curvature map.
+                        % (double, numBoundaryPixels x 1)
+                        valuesToInsert = obj.createCurvatureLabels( ...
+                            obj.getBoundary(i) ...
+                        );
+
+                        valueToReplace = 0;
+
+                    case "intensity"
+
+                        % Get intensity values of each boundary point.
+                        % (double, numBoundaryPixels x 1)
+                        valuesToInsert = obj.getIntensityOnBoundary( ...
+                            varargin{:}, ...
+                            obj.getBoundary(i), ...
+                            i ...
+                        );    
+
+                        valueToReplace = 0;
+
+                    otherwise
+
+                        error("Unknown type of flatmap: %s",type);
+
+                end
 
                 if ~isempty(labelsToRemove)
                 
-                    % Get the indices of brain region labels that user
-                    % wants to remove. (logical, numLabels x 1)
-                    idxsToReplace = obj.getIndicesToReplace(labels,labelsToRemove);
-        
-                    % Replace the labels to be inserted with the label of
-                    % background (0).
-                    labelsToInsert(idxsToReplace) = 0;
+                    % Replace labels the user wants to remove with the 
+                    % label of background (0).
+                    valuesToInsert = obj.replaceValuesOfLabels( ...
+                        valuesToInsert, ...
+                        labels, ...
+                        labelsToRemove, ...
+                        valueToReplace ...
+                    );
 
                 end
 
                 % Insert the labels to the flatmap.
-                flatmap = obj.insertLabelsToFlatmap(flatmap,labelsToInsert,i);
+                flatmap = obj.insertLabelsToFlatmap(flatmap,valuesToInsert,i);
             
             end
 
         end
 
-        function image = initImage(obj)
+        function image = initImage(obj,precision)
 
             % Calculate the height of the flatmap and curvature map.
             height = obj.pFlatmapHeightTop + obj.pFlatmapHeightBottom;
 
-            % Initialize the image. (uint8, M x numValidSlices)
-            image = uint8(zeros(height,obj.pNumValidSlices));
+            % Initialize the image. (numeric, M x numValidSlices)
+            image = zeros(height,obj.pNumValidSlices,precision);
 
         end
 
-        function labels= createCurvatureLabels(obj,boundary)
+        function labels = createCurvatureLabels(obj,boundary)
             %
             % Create labels based on curvature of each boundary
             % point for the curvature map. Assign a value of 2 to points
@@ -887,11 +974,45 @@ classdef CerebellumFlatmap < handle
         
         end
 
-        function idxsToReplace = getIndicesToReplace(obj,labels,labelsToRemove)
+        function values = getIntensityOnBoundary(obj, ...
+                intensityVolume, ...
+                boundary, ...
+                sliceIndex ...
+            )
 
-            % Return the indices of labels that user wants to remove
-            % (replace with the label of background). (logical, numLabels x 1)
+            numBoundaryPixels = size(boundary,1);
+
+            % Initialize the output. (double, numBoundaryPixels x 1)
+            values = zeros(numBoundaryPixels,1);                  
+
+            for i = 1:numBoundaryPixels
+
+                m = boundary(i,1);
+                n = boundary(i,2);
+
+                % Convert the indices on the 2D slice into indices in the 
+                % 3D volume based on the sagittal dimension number.
+                switch obj.pDimNumSagittal
+                    case 1; yidx = sliceIndex; xidx = m; zidx = n;
+                    case 2; yidx = m; xidx = sliceIndex; zidx = n;
+                    case 3; yidx = m; xidx = n; zidx = sliceIndex;
+                end
+
+                % Store the intensity of the boundary pixel.
+                values(i) = intensityVolume(yidx,xidx,zidx);
+
+            end
+
+        end
+
+        function values = replaceValuesOfLabels(obj,values,labels,labelsToRemove,value)
+
+            % Get the indices of labels that user wants to remove (replace 
+            % with another value). (logical, numLabels x 1)
             idxsToReplace = arrayfun(@(x)any(x == labelsToRemove),labels);
+
+            % Replace the values with the specified value.
+            values(idxsToReplace) = value;
 
         end
 
@@ -925,18 +1046,37 @@ classdef CerebellumFlatmap < handle
 
         end
 
-        function hFig = createFigure(obj,image,colorMap,colorLabels,aspectRatioX)
+        function hFig = createFigure(obj,image,aspectRatioX,options)
+
+            arguments
+                obj
+                image
+                aspectRatioX
+                options.colorMap    {} = []
+                options.colorLabels {} = []
+            end
+
+            colorMap    = options.colorMap;
+            colorLabels = options.colorLabels;
 
             hFig = figure("Visible","off");
 
             % Show the flatmap.
-            imshow(image,colorMap);
-            colorbar( ...
-                "Direction","reverse", ...
-                "TickLabels",colorLabels, ...
-                "TickLabelInterpreter","none", ...
-                "Ticks",(0:numel(colorLabels))+0.5 ...
-            );
+            if isempty(colorMap)
+
+                imshow(image);
+
+            else
+
+                imshow(image,colorMap);
+                colorbar( ...
+                    "Direction","reverse", ...
+                    "TickLabels",colorLabels, ...
+                    "TickLabelInterpreter","none", ...
+                    "Ticks",(0:numel(colorLabels))+0.5 ...
+                );
+
+            end            
             
             % Adjust the x and y axes.
             axes = gca;
@@ -1397,6 +1537,23 @@ classdef CerebellumFlatmap < handle
                     obj.pLengY + 0.5, ...
                     obj.pLengZ + 0.5 ...
                 );
+            end
+
+        end
+
+        function validateAspectRatioX(obj,aspectRatioX)
+
+            % Validate the aspect ratio for the x axis.
+            mustBeNumericScalar(aspectRatioX)
+            mustBeGreaterThanOrEqual(aspectRatioX,1);
+
+        end
+
+        function validateLabelsToRemove(obj,labelsToRemove)
+
+            % Validate the labels to be removed.
+            if ~isempty(labelsToRemove)
+                mustBePosInteger(labelsToRemove);
             end
 
         end
