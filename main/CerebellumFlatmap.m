@@ -17,6 +17,7 @@ classdef CerebellumFlatmap < handle
     %   2.2 - 20230608 a) Renamed showFlatmap() to showLabelFlatmap(), and
     %                     showCurvaturemap() to showCurvatureFlatmap().
     %                  b) Added showIntensityFlatmap().
+    %   2.3 - 20231004 Added showBorderFlatmap().
     
     properties (Access = private)
 
@@ -42,6 +43,24 @@ classdef CerebellumFlatmap < handle
         pLabelIncision   % Incision lines
         pLabelOrigin     % Origin lines
         pLabelBridge     % Bridge lines between objects. 
+
+        % Fixed label indices.
+        pLabelIndexBackground      = 0;
+        pLabelIndexBorder          = 1;
+        pLabelIndexInflectionPoint = 1;
+        pLabelIndexConcave         = 2;
+        pLabelIndexConvex          = 3;
+
+        % Fixed label names.
+        pLabelNameBackground      = "background";
+        pLabelNameBorder          = "border";
+        pLabelNameInflectionPoint = "inflection point";
+        pLabelNameConcave         = "concave";
+        pLabelNameConvex          = "convex";        
+
+        % Fixed label colors.
+        pLabelColorBackground      = "white";
+        pLabelColorInflectionPoint = "black";
 
         % Index of the first valid slice.
         pIndexValidSliceStart
@@ -69,6 +88,9 @@ classdef CerebellumFlatmap < handle
         % A table that stores coordinates of voxels inside spheres of
         % variety of radius.
         pCoordInUnitSphereTable
+
+        % A MatlabColor handle.
+        hMatlabColor
         
     end
 
@@ -113,6 +135,9 @@ classdef CerebellumFlatmap < handle
             obj.pLabelIncision   = labelIncision;
             obj.pLabelOrigin     = labelOrigin;
             obj.pLabelBridge     = labelBridge;
+
+            % Create and store a MatlabColor handle.
+            obj.hMatlabColor = MatlabColor();
 
         end
 
@@ -362,6 +387,65 @@ classdef CerebellumFlatmap < handle
             
         end        
 
+        function hFig = showBorderFlatmap(obj,options)
+            %
+            % Create and show a border flatmap.
+            %
+            % <Input>
+            % OPTIONS
+            %   aspectRatioX: (numeric, 1 x 1)
+            %       A scaling ratio for stretching the flatmap in the X 
+            %       direction. The value must be greater than or equal to
+            %       1.
+            %   labelsToRemove: (numeric, M x N)
+            %       Label(s) to be removed from the final flatmap. The 
+            %       value(s) must be positive integers.
+            %   colorNameBorder: (text scalar)
+            %       Color names for border line. See plot() for the valid
+            %       color names.
+            %
+            % <Output>
+            %   hFig: (matlab.ui.Figure, 1 x 1)
+            %       A figure handle of the flatmap.
+            %
+
+            arguments
+                obj {}
+                options.aspectRatioX    {} = 1
+                options.labelsToRemove  {} = []
+                options.colorNameBorder {} = "black"
+            end
+
+            aspectRatioX    = options.aspectRatioX;
+            labelsToRemove  = options.labelsToRemove;
+            colorNameBorder = options.colorNameBorder;
+
+            % Validate the parsing of the volume data is done.
+            obj.validateParsingDone();
+
+            % Validate the inputs.
+            obj.validateAspectRatioX(aspectRatioX);
+            obj.validateLabelsToRemove(labelsToRemove);
+
+            % Create a color map and color labels for a border map.
+            % (uint8, 1+1 x RGB), (string, 1+1 x 1)
+            [colorMap,colorLabels] = obj.createColorMapForBorder( ...
+                colorNameBorder ...
+            );
+
+            % Create a label flatmap. (uint8, M x N)
+            labelFlatmap = obj.createFlatmap(labelsToRemove,"border");            
+            
+            % Show the flatmap.
+            hFig = obj.createFigure( ...
+                labelFlatmap, ...
+                aspectRatioX, ...
+                colorMap = colorMap, ...
+                colorLabels = colorLabels ...
+            );
+
+        end
+
         function hFig = showCurvatureFlatmap(obj,options)
             %
             % Create and show a curvature flatmap.
@@ -404,7 +488,7 @@ classdef CerebellumFlatmap < handle
 
             % Create a color map and color labels for a cuvature map.
             % (uint8, 3+1 x RGB), (string, 3+1 x 1)
-            [colorMap,colorLabels] = createColorMapForCurvature(obj, ...
+            [colorMap,colorLabels] = obj.createColorMapForCurvature( ...
                 colorNameConcave, ...
                 colorNameConvex ...
             );
@@ -786,28 +870,34 @@ classdef CerebellumFlatmap < handle
 
         function [colorMap,colorLabels] = readColorMap(obj,colorTablePath)
             
-            % Read the file. (table, numColors x 6)
+            % Read the color table file. (table, numColors x 6)
             colorTable = readtable( ...
                 colorTablePath, ...
                 'fileType','delimitedtext', ...
                 'Delimiter',' ', ...
                 'NumHeaderLines',2 ...
-            );
+            );            
         
-            % Extract the RGB triplets and their labels.
+            % Extract the colors (RGB triplets) and their labels.
             % (double, numColors x RGB), (cell, numColors x 1)
-            colorMap    = colorTable{:,3:5};
-            colorLabels = colorTable{:,2};
-        
-            % Add a background (white) for pixels with values 0.
-            colorMap    = [255,255,255;colorMap];
-            colorLabels = ['background';colorLabels];
-        
-            % Convert the colors to uint8. (uint8, numColors+1 x RGB)
-            colorMap = uint8(colorMap);
-        
-            % Convert the labels to string. (string, numColors+1 x 1)
-            colorLabels = string(colorLabels);
+            colorMapFile    = colorTable{:,3:5};
+            colorLabelsFile = colorTable{:,2};
+
+            % Initialize a color map with the background.
+            % (uint8, 1 x RGB), (string, 1 x 1)
+            [colorMap,colorLabels] = obj.initColorMap();
+
+            % Append the extracted colors and labels to the color map.
+            % (uint8, M+1 x RGB), (string, M+1 x 1)
+            colorMap    = [colorMap;colorMapFile];
+            colorLabels = [colorLabels;colorLabelsFile];
+
+            % NOTE:
+            % Index, Label Name
+            %   0  , Background
+            %   1  , Label 1 
+            %   2  , Label 2
+            %   3  , Label 3
         
         end
 
@@ -816,29 +906,91 @@ classdef CerebellumFlatmap < handle
                 colorNameConvex ...
             )
 
-            % Create a MatlabColor handle.
-            hMatlabColor = MatlabColor();
+            % Initialize a color map with the background.
+            % (uint8, 1 x RGB), (string, 1 x 1)
+            [colorMap,colorLabels] = obj.initColorMap();
 
-            % Validate the color names and get the colors in RGB triplets 
+            % Add the colors for the inflection, concave, and convex points 
+            % to the color map. (uint8, 3+1 x RGB), (string, 3+1 x 1)
+            [colorMap,colorLabels] = obj.addColorMap(colorMap,colorLabels, ...
+                obj.pLabelNameInflectionPoint, ...
+                obj.pLabelColorInflectionPoint ...
+            );
+            [colorMap,colorLabels] = obj.addColorMap(colorMap,colorLabels, ...
+                obj.pLabelNameConcave, ...
+                colorNameConcave ...
+            );
+            [colorMap,colorLabels] = obj.addColorMap(colorMap,colorLabels, ...
+                obj.pLabelNameConvex, ...
+                colorNameConvex ...
+            );
+
+            % NOTE:
+            % Index, Label Name
+            %   0  , Background
+            %   1  , Inflection point
+            %   2  , Concave
+            %   3  , Convex
+
+        end
+
+        function [colorMap,colorLabels] = createColorMapForBorder(obj, ...
+                colorNameBorder ...
+            )
+
+            % Initialize a color map with the background.
+            % (uint8, 1 x RGB), (string, 1 x 1)
+            [colorMap,colorLabels] = obj.initColorMap();
+
+            % Add the colors for border points to the color map.
+            % (uint8, 1+1 x RGB), (string, 1+1 x 1)
+            [colorMap,colorLabels] = obj.addColorMap(colorMap,colorLabels, ...
+                obj.pLabelNameBorder, ...
+                colorNameBorder ...
+            );
+
+            % NOTE:
+            % Index, Label Name
+            %   0  , Background
+            %   1  , Border
+
+        end
+
+        function [colorMap,colorLabels] = addColorMap(obj,colorMap,colorLabels, ...
+                labelName, ...
+                colorName ...
+            )
+
+            % Validate the color name and get the color in RGB triplets 
             % format in [0,1]. (double, 1 x RGB)
-            colorConcave = hMatlabColor.convertToRgbTriplets(colorNameConcave);
-            colorConvex  = hMatlabColor.convertToRgbTriplets(colorNameConvex);
+            color = obj.hMatlabColor.convertToRgbTriplets( ...
+                colorName ...
+            );
 
-            % Create a color map. (uint8, 4 x RGB)
-            colorMap = uint8(255*[
-                1,1,1;
-                0,0,0;
-                colorConcave;
-                colorConvex
-            ]);
+            % Append the color map. (uint8, M+1 x RGB)
+            colorMap = [colorMap;uint8(255*color)];
 
-            % Create color labels. (string, 4 x 1)
-            colorLabels = [
-                "background";
-                "inflection point";
-                "concave";
-                "convex"
-            ];
+            % Append the color labels. (string, M+1 x 1)
+            colorLabels = [colorLabels;labelName];
+
+        end
+
+        function [colorMap,colorLabels] = initColorMap(obj)
+            %
+            % Initialize a color map with the background.
+            %
+
+            % Get the background color in RGB triplets format in [0,1].
+            % (double, 1 x RGB)
+            color = obj.hMatlabColor.convertToRgbTriplets( ...
+                obj.pLabelColorBackground ...
+            );
+
+            % Create a color map. (uint8, 1 x RGB)
+            colorMap = uint8(255*color);
+
+            % Create a color label. (string, 1 x 1)
+            colorLabels = obj.pLabelNameBackground;
 
         end
 
@@ -871,7 +1023,11 @@ classdef CerebellumFlatmap < handle
                         % Use the brain region labels for the flatmap.
                         valuesToInsert = labels;
 
-                        valueToReplace = 0;
+                    case "border"
+
+                        % Create labels for borders.
+                        % (double, numBoundaryPixels x 1)
+                        valuesToInsert = obj.createBorderLabels(labels);
 
                     case "curvature"
 
@@ -881,8 +1037,6 @@ classdef CerebellumFlatmap < handle
                         valuesToInsert = obj.createCurvatureLabels( ...
                             obj.getBoundary(i) ...
                         );
-
-                        valueToReplace = 0;
 
                     case "intensity"
 
@@ -894,8 +1048,6 @@ classdef CerebellumFlatmap < handle
                             i ...
                         );    
 
-                        valueToReplace = 0;
-
                     otherwise
 
                         error("Unknown type of flatmap: %s",type);
@@ -903,14 +1055,13 @@ classdef CerebellumFlatmap < handle
                 end
 
                 if ~isempty(labelsToRemove)
-                
-                    % Replace labels the user wants to remove with the 
-                    % label of background (0).
-                    valuesToInsert = obj.replaceValuesOfLabels( ...
+
+                    % Replace the values in the location corresponding to
+                    % the label to be removed with the background value (0).
+                    valuesToInsert = obj.replaceValuesWithBackground( ...
                         valuesToInsert, ...
                         labels, ...
-                        labelsToRemove, ...
-                        valueToReplace ...
+                        labelsToRemove ...
                     );
 
                 end
@@ -932,13 +1083,58 @@ classdef CerebellumFlatmap < handle
 
         end
 
-        function labels = createCurvatureLabels(obj,boundary)
+        function indices = createBorderLabels(obj,labels)
+
+            previous = [];
+
+            numPoints = numel(labels);
+
+            % Initialize indices indicating whether the pixel is part of 
+            % borders. (logical, numPoints x 1)
+            isBorder = false(numPoints,1);
+
+            for j = 1:numPoints
+
+                label = labels(j);
+
+                % Consider the first and last pixels as the border.
+                if j == 1 || j == numPoints
+
+                    isBorder(j) = true;
+
+                    previous = label;
+
+                    continue;
+
+                end
+
+                if label == previous
+                    continue;
+                end
+
+                % Consider two pixels with different labels along adjacent
+                % boundaries as the border.
+                isBorder(j)   = true;
+                isBorder(j-1) = true;
+
+                previous = label;
+
+            end
+
+            % Assign the index for border to the pixels and the index for 
+            % background to everything else.
+            indices = repmat(obj.pLabelIndexBackground,[numPoints,1]);
+            indices(isBorder) = obj.pLabelIndexBorder;
+
+        end
+
+        function indices = createCurvatureLabels(obj,boundary)
             %
-            % Create labels based on curvature of each boundary
-            % point for the curvature map. Assign a value of 2 to points
-            % with negative curvature, a value of 3 to points with positive
-            % curvature, and a value of 1 to points with zero curvature 
-            % (inflection points).
+            % Create label indices based on curvature of each boundary
+            % point for the curvature map. Assign an index of 2 to points
+            % with negative curvature, an index of 3 to points with
+            % positive curvature, and an index of 1 to points with zero
+            % curvature (inflection points).
             %
 
             % Number of boundary pixels.
@@ -948,14 +1144,11 @@ classdef CerebellumFlatmap < handle
             % (double, numBoundaryPixels x 1)
             curvatures = obj.calcCurvature2D(boundary(:,2),boundary(:,1));
 
-            % Create labels for the boundary pixels.
+            % Assign label indices based on the curvature's sign.
             % (double, numBoundaryPixels x 1)
-            labels = ones(numBoundaryPixels,1);
-
-            % Assign 2 and 3 to pixels that have a negative and positive 
-            % curvature, respectively.
-            labels(curvatures < 0) = 2;
-            labels(curvatures > 0) = 3;
+            indices = repmat(obj.pLabelIndexInflectionPoint,[numBoundaryPixels,1]);
+            indices(curvatures < 0) = obj.pLabelIndexConcave;
+            indices(curvatures > 0) = obj.pLabelIndexConvex;
 
         end
 
@@ -1005,14 +1198,14 @@ classdef CerebellumFlatmap < handle
 
         end
 
-        function values = replaceValuesOfLabels(obj,values,labels,labelsToRemove,value)
+        function values = replaceValuesWithBackground(obj,values,labels,labelsToRemove)
 
-            % Get the indices of labels that user wants to remove (replace 
-            % with another value). (logical, numLabels x 1)
+            % Get the indices of values in the location corresponding to 
+            % the labels that user wants to remove. (logical, numLabels x 1)
             idxsToReplace = arrayfun(@(x)any(x == labelsToRemove),labels);
 
-            % Replace the values with the specified value.
-            values(idxsToReplace) = value;
+            % Replace the values with the background value.
+            values(idxsToReplace) = obj.pLabelBackground;
 
         end
 
@@ -1426,7 +1619,7 @@ classdef CerebellumFlatmap < handle
 
             % Get the labels of the boundary pixels.
             % (double, numBoundaryPixels x 1)
-            labels = boundaryData(:,3);            
+            labels = boundaryData(:,3);
 
         end
 

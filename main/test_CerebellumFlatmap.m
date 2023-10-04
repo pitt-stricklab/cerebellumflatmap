@@ -17,6 +17,10 @@ intensityVolumePath = "C:\Users\Mitsu\Desktop\testCerebellumFlatMap\data\group_3
 % A path of a color lookup table file that is created by 3D Slicer (.ctbl).
 colorTablePath = "C:\Users\Mitsu\Desktop\testCerebellumFlatMap\data\v4 PF with bridge\cerebellum_annotation_centered_refinedDirectionRAI_PC_WM_Cortex_connected.ctbl";
 
+% A path of a matlab file that stores coordinates of points within the
+% volume.
+pointsPath = "C:\Users\Mitsu\Desktop\testCerebellumFlatMap\data\init_transformed_points.mat";
+
 % Dimension number of sagittal planes.
 dimNumSagittal = 1;
 
@@ -49,36 +53,13 @@ plotSizeTarget = 20;
 
 % Names of colors for figures. (text scalar)
 colorNameBoundary = "cyan";
+colorNameBorder   = "black";
 colorNameConcave  = "blue";
 colorNameConvex   = "red";
 colorNameTarget   = "green";
 
 % NOTE:
 % See plot() for the valid color names.
-
-%-------------------------------%
-
-% Temp to make source points.
-
-% % A path of a matlab file that stores coordinates of points within the
-% % volume.
-% pointPath = "C:\Users\Mitsu\Desktop\testCerebellumFlatMap\data\init_transformed_points.mat";
-
-% % Load the xyz coordinates of points. (double, numPoints x XYZ)
-% data = load(pointPath);
-% xyzSource = data.whole_section_plotted;
-
-lengY = 593;
-lengX = 422;
-lengZ = 364;
-
-numSamples = 300;
-
-xs = randperm(lengX,numSamples)';
-ys = randperm(lengY,numSamples)';
-zs = randperm(lengZ,numSamples)';
-
-xyzSource = [xs,ys,zs];
 
 %-------------------------------%
 
@@ -106,27 +87,36 @@ hCerebellumFlatmap.parse(verbose);
 
 %-------------------------------%
 
-% % Show a label flatmap.
-% hFig1 = hCerebellumFlatmap.showLabelFlatmap( ...
-%     colorTablePath, ...
-%     aspectRatioX = aspectRatioX, ...
-%     labelsToRemove = labelsToRemove ...
-% );
+% Show a label flatmap.
+hFig1 = hCerebellumFlatmap.showLabelFlatmap( ...
+    colorTablePath, ...
+    aspectRatioX = aspectRatioX, ...
+    labelsToRemove = labelsToRemove ...
+);
 
 %-------------------------------%
 
-% % Show a curvature flatmap.
-% hFig2 = hCerebellumFlatmap.showCurvatureFlatmap( ...
-%     aspectRatioX = aspectRatioX, ...
-%     labelsToRemove = labelsToRemove, ...
-%     colorNameConcave = colorNameConcave, ...
-%     colorNameConvex = colorNameConvex ...
-% );
+% Show a border flatmap.
+hFig2 = hCerebellumFlatmap.showBorderFlatmap( ...
+    aspectRatioX = aspectRatioX, ...
+    labelsToRemove = labelsToRemove, ...
+    colorNameBorder = colorNameBorder ...
+);
+
+%-------------------------------%
+
+% Show a curvature flatmap.
+hFig3 = hCerebellumFlatmap.showCurvatureFlatmap( ...
+    aspectRatioX = aspectRatioX, ...
+    labelsToRemove = labelsToRemove, ...
+    colorNameConcave = colorNameConcave, ...
+    colorNameConvex = colorNameConvex ...
+);
 
 %-------------------------------%
 
 % Show a intensity flatmap.
-hFig3 = hCerebellumFlatmap.showIntensityFlatmap( ...
+hFig4 = hCerebellumFlatmap.showIntensityFlatmap( ...
     intensityVolumePath, ...
     aspectRatioX = aspectRatioX, ...
     labelsToRemove = labelsToRemove ...
@@ -134,15 +124,38 @@ hFig3 = hCerebellumFlatmap.showIntensityFlatmap( ...
 
 %-------------------------------%
 
-% % Get the xy coordinates of the source points on the flatmap.
-% xyTarget = hCerebellumFlatmap.mapPoints(xyzSource);
-% 
-% % Show the mapped (target) points on the flatmap.
-% hold on
-% scatter( ...
-%     xyTarget(:,1),xyTarget(:,2), ...
-%     plotSizeTarget, ...
-%     "filled", ...
-%     "MarkerFaceColor",colorNameTarget ...
-% );
-% hold off
+% Temp to make source points.
+
+lengY = 593;
+lengX = 422;
+lengZ = 364;
+
+numSamples = 300;
+
+xs = randperm(lengX,numSamples)';
+ys = randperm(lengY,numSamples)';
+zs = randperm(lengZ,numSamples)';
+
+xyzSource = [xs,ys,zs];
+
+%-------------------------------%
+
+% % Load the xyz coordinates of points. (double, numPoints x XYZ)
+% data = load(pointsPath);
+% xyzSource = data.whole_section_plotted;
+
+% Get the xy coordinates of the source points on the flatmap.
+xyTarget = hCerebellumFlatmap.mapPoints(xyzSource);
+
+% Show the mapped (target) points on the flatmap.
+hold on
+scatter( ...
+    xyTarget(:,1),xyTarget(:,2), ...
+    plotSizeTarget, ...
+    "filled", ...
+    "MarkerFaceColor",colorNameTarget ...
+);
+hold off
+
+%-------------------------------%
+
