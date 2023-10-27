@@ -18,6 +18,7 @@ classdef CerebellumFlatmap < handle
     %                     showCurvaturemap() to showCurvatureFlatmap().
     %                  b) Added showIntensityFlatmap().
     %   2.3 - 20231004 Added showBorderFlatmap().
+    %   2.4 - 20231027 Added getCoordinateFlatmap().
     
     properties (Access = private)
 
@@ -568,6 +569,43 @@ classdef CerebellumFlatmap < handle
 
         end        
 
+        function coordinateFlatmap = getCoordinateFlatmap(obj,options)
+            %
+            % Create a flat map that represents the coordinates of each
+            % contour point on each slice.
+            %
+            % <Output>
+            %   coordinateFlatmap: (uint8, M x N x YX)
+            %       A flat map representing the coordinates of each contour
+            %       point on each slice. The first channel contains Y
+            %       coordinates (vertical axis), and the second channel
+            %       contains X coordinates (horizontal axis).
+            %
+
+            arguments
+                obj {}
+                options.aspectRatioX   {} = 1
+                options.labelsToRemove {} = []           
+            end
+
+            aspectRatioX   = options.aspectRatioX;
+            labelsToRemove = options.labelsToRemove;
+
+            % Validate the parsing of the volume data is done.
+            obj.validateParsingDone();
+
+            % Validate the inputs.
+            obj.validateAspectRatioX(aspectRatioX);
+            obj.validateLabelsToRemove(labelsToRemove);
+
+            % Create a coordinate flatmap. (uint8, M x N x YX)
+            coordinateFlatmap = obj.createFlatmap( ...
+                labelsToRemove, ...
+                "coordinates" ...
+            );
+
+        end
+
         function xyTarget = mapPoints(obj,xyzSource)
             %
             % Map the specified points in the cerebellum to the flatmap.
@@ -999,12 +1037,13 @@ classdef CerebellumFlatmap < handle
         function flatmap = createFlatmap(obj,labelsToRemove,type,varargin)
 
             switch type
-                case "intensity"; precision = "double";
-                otherwise;        precision = "uint8";
+                case "intensity";   precision = "double"; channel = 1;
+                case "coordinates"; precision = "uint8";  channel = 2;
+                otherwise;          precision = "uint8";  channel = 1;
             end
 
-            % Initialize a flatmap. (numeric, M x numValidSlices)
-            flatmap = obj.initImage(precision);
+            % Initialize a flatmap. (numeric, M x numValidSlices x channel)
+            flatmap = obj.initImage(precision,channel);
 
             for i = 1:obj.pNumSagittalSlices
 
@@ -1046,7 +1085,17 @@ classdef CerebellumFlatmap < handle
                             varargin{:}, ...
                             obj.getBoundary(i), ...
                             i ...
-                        );    
+                        );
+
+                    case "coordinates"
+
+                        % Get the y and x coordinates of the boundary
+                        % points on the slice. (double, numBoundaryPixels x YX)
+                        boundary = obj.getBoundary(i);
+
+                        % Rearrange the dimensions.
+                        % (double, numBoundaryPixels x 1 x YX)
+                        valuesToInsert = permute(boundary,[1,3,2]);
 
                     otherwise
 
@@ -1073,13 +1122,13 @@ classdef CerebellumFlatmap < handle
 
         end
 
-        function image = initImage(obj,precision)
+        function image = initImage(obj,precision,channel)
 
             % Calculate the height of the flatmap and curvature map.
             height = obj.pFlatmapHeightTop + obj.pFlatmapHeightBottom;
 
             % Initialize the image. (numeric, M x numValidSlices)
-            image = zeros(height,obj.pNumValidSlices,precision);
+            image = zeros([height,obj.pNumValidSlices,channel],precision);
 
         end
 
@@ -1205,7 +1254,7 @@ classdef CerebellumFlatmap < handle
             idxsToReplace = arrayfun(@(x)any(x == labelsToRemove),labels);
 
             % Replace the values with the background value.
-            values(idxsToReplace) = obj.pLabelBackground;
+            values(idxsToReplace,:,:) = obj.pLabelBackground;
 
         end
 
@@ -1224,7 +1273,7 @@ classdef CerebellumFlatmap < handle
             [x,ys] = obj.covertIndexToCoordOnFlatmap(indicesOnFlatmap,sliceIndex);
 
             % Insert the labels into the flatmap.
-            flatmap(ys,x) = labels;
+            flatmap(ys,x,:) = labels;
 
         end
 

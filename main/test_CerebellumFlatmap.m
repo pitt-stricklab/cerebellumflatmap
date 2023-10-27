@@ -87,75 +87,81 @@ hCerebellumFlatmap.parse(verbose);
 
 %-------------------------------%
 
-% Show a label flatmap.
-hFig1 = hCerebellumFlatmap.showLabelFlatmap( ...
-    colorTablePath, ...
+% % Show a label flatmap.
+% hFig1 = hCerebellumFlatmap.showLabelFlatmap( ...
+%     colorTablePath, ...
+%     aspectRatioX = aspectRatioX, ...
+%     labelsToRemove = labelsToRemove ...
+% );
+
+%-------------------------------%
+
+% % Show a border flatmap.
+% hFig2 = hCerebellumFlatmap.showBorderFlatmap( ...
+%     aspectRatioX = aspectRatioX, ...
+%     labelsToRemove = labelsToRemove, ...
+%     colorNameBorder = colorNameBorder ...
+% );
+
+%-------------------------------%
+
+% % Show a curvature flatmap.
+% hFig3 = hCerebellumFlatmap.showCurvatureFlatmap( ...
+%     aspectRatioX = aspectRatioX, ...
+%     labelsToRemove = labelsToRemove, ...
+%     colorNameConcave = colorNameConcave, ...
+%     colorNameConvex = colorNameConvex ...
+% );
+
+%-------------------------------%
+
+% % Show a intensity flatmap.
+% hFig4 = hCerebellumFlatmap.showIntensityFlatmap( ...
+%     intensityVolumePath, ...
+%     aspectRatioX = aspectRatioX, ...
+%     labelsToRemove = labelsToRemove ...
+% );
+
+%-------------------------------%
+
+% % Temp to make source points.
+% 
+% lengY = 593;
+% lengX = 422;
+% lengZ = 364;
+% 
+% numSamples = 300;
+% 
+% xs = randperm(lengX,numSamples)';
+% ys = randperm(lengY,numSamples)';
+% zs = randperm(lengZ,numSamples)';
+% 
+% xyzSource = [xs,ys,zs];
+
+%-------------------------------%
+
+% % % Load the xyz coordinates of points. (double, numPoints x XYZ)
+% % data = load(pointsPath);
+% % xyzSource = data.whole_section_plotted;
+% 
+% % Get the xy coordinates of the source points on the flatmap.
+% xyTarget = hCerebellumFlatmap.mapPoints(xyzSource);
+% 
+% % Show the mapped (target) points on the flatmap.
+% hold on
+% scatter( ...
+%     xyTarget(:,1),xyTarget(:,2), ...
+%     plotSizeTarget, ...
+%     "filled", ...
+%     "MarkerFaceColor",colorNameTarget ...
+% );
+% hold off
+
+%-------------------------------%
+
+% Get a coordinate flatmap. (uint8, M x N x YX)
+coordinateFlatmap = hCerebellumFlatmap.getCoordinateFlatmap( ...
     aspectRatioX = aspectRatioX, ...
     labelsToRemove = labelsToRemove ...
 );
-
-%-------------------------------%
-
-% Show a border flatmap.
-hFig2 = hCerebellumFlatmap.showBorderFlatmap( ...
-    aspectRatioX = aspectRatioX, ...
-    labelsToRemove = labelsToRemove, ...
-    colorNameBorder = colorNameBorder ...
-);
-
-%-------------------------------%
-
-% Show a curvature flatmap.
-hFig3 = hCerebellumFlatmap.showCurvatureFlatmap( ...
-    aspectRatioX = aspectRatioX, ...
-    labelsToRemove = labelsToRemove, ...
-    colorNameConcave = colorNameConcave, ...
-    colorNameConvex = colorNameConvex ...
-);
-
-%-------------------------------%
-
-% Show a intensity flatmap.
-hFig4 = hCerebellumFlatmap.showIntensityFlatmap( ...
-    intensityVolumePath, ...
-    aspectRatioX = aspectRatioX, ...
-    labelsToRemove = labelsToRemove ...
-);
-
-%-------------------------------%
-
-% Temp to make source points.
-
-lengY = 593;
-lengX = 422;
-lengZ = 364;
-
-numSamples = 300;
-
-xs = randperm(lengX,numSamples)';
-ys = randperm(lengY,numSamples)';
-zs = randperm(lengZ,numSamples)';
-
-xyzSource = [xs,ys,zs];
-
-%-------------------------------%
-
-% % Load the xyz coordinates of points. (double, numPoints x XYZ)
-% data = load(pointsPath);
-% xyzSource = data.whole_section_plotted;
-
-% Get the xy coordinates of the source points on the flatmap.
-xyTarget = hCerebellumFlatmap.mapPoints(xyzSource);
-
-% Show the mapped (target) points on the flatmap.
-hold on
-scatter( ...
-    xyTarget(:,1),xyTarget(:,2), ...
-    plotSizeTarget, ...
-    "filled", ...
-    "MarkerFaceColor",colorNameTarget ...
-);
-hold off
-
-%-------------------------------%
 
