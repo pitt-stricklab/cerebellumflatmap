@@ -1,5 +1,6 @@
 # CerebellumFlatmap
 * main\CerebellumFlatmap.m
+  
 A class for creating a flatmap from the cerebellar volumetric data using the following method.
 1. Extract the boundary pixels of the cerebellum from each sagittal slice. 
 2. Cut open the boundary line at the pre-defined incision point.
