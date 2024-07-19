@@ -86,6 +86,8 @@ hCerebellumFlatmap.showBoundaries( ...
 
 ```
 
+https://github.com/user-attachments/assets/7879c0b8-8d27-4b5f-969f-a15475175261
+
 ## Create a label flatmap.
 
 ```matlab
