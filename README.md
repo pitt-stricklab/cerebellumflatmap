@@ -118,6 +118,9 @@ hFig1 = hCerebellumFlatmap.showLabelFlatmap( ...
 
 ```
 
+![fig1](https://github.com/user-attachments/assets/385de5e7-dc39-4b7b-ac19-577f765d6160)
+
+
 ## Create a border flatmap.
 
 ```matlab
@@ -134,6 +137,9 @@ hFig2 = hCerebellumFlatmap.showBorderFlatmap( ...
 );
 
 ```
+
+![fig2](https://github.com/user-attachments/assets/6bd2dca2-5c73-4059-bd3e-94c5635426a2)
+
 
 ## Create a curvature flatmap.
 
@@ -153,6 +159,9 @@ hFig3 = hCerebellumFlatmap.showCurvatureFlatmap( ...
 );
 
 ```
+
+![fig3](https://github.com/user-attachments/assets/4e05441b-fa7b-4555-8070-1ecc606457f5)
+
 
 ## Create an intensity flatmap.
 
@@ -186,6 +195,9 @@ clim([intensityMin,intensityMax]);
 colorbar;
 
 ```
+
+![fig4](https://github.com/user-attachments/assets/b2524815-4179-4dad-8710-552fff3bfebc)
+
 
 ## Create a coordinate flatmap.
 
@@ -261,3 +273,5 @@ scatter( ...
 hold off
 
 ```
+
+![fig5](https://github.com/user-attachments/assets/05903ea4-fc69-4959-98cd-217f91445cd3)
