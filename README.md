@@ -231,7 +231,7 @@ xyzSource = [xs,ys,zs];
 
 ```matlab
 
-% Get the coordinates (n, m) of the mapped points on the flatmap.
+% Get the coordinates (n, m) of the mapped (target) points on the flatmap.
 % (double, numTargetPoints x NM)
 nmTarget = hCerebellumFlatmap.mapPoints(xyzSource);
 
@@ -239,11 +239,17 @@ nmTarget = hCerebellumFlatmap.mapPoints(xyzSource);
 % N represents the horizontal axis value on the flatmap (index of the 
 % sagittal slice), and M represents the vertical axis.
 
+% Plot size for the mapped points.
+plotSizeTarget = 20;
+
+% Color name for the mapped points. (text, 1 x 1)
+colorNameTarget = "green";
+
 % Get the Axes handle of the figure.
 figure(hFig1);
 hAxes = gca;
 
-% Show the mapped (target) points on the flatmap.
+% Show the mapped points on the flatmap.
 hold on
 scatter( ...
     hAxes, ...
