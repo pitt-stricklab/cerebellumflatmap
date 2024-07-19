@@ -4,7 +4,7 @@ classdef MatlabColor < handle
     %
 
     % HISTORY:
-    %   1.0 - YYYYMMDD Mitsu Written
+    %   1.0 - YYYYMMDD Written by Mitsu
     %   2.0 - 20220830 a) Renamed from ColorString to MatlabColor.
     %                  b) Changed from Static methods to a handle.
     %                  c) Created getCode() and allow to return short name,
@@ -101,24 +101,6 @@ classdef MatlabColor < handle
     end
 
     methods (Access = public)
-        
-        % Constructor.
-        
-        function obj = MatlabColor()
-            %
-            % EXPLANATION_FOR_THIS_CLASS.
-            %
-            % <Syntax>
-            %   CLASS_NAME(INPUT1,INPUT2)
-            %
-            % <Input>
-            %   INPUT1: (CLASS, HEIGHT x WIDTH)
-            %       EXPLANATION_FOR_INPUT1.
-            %   INPUT2: (CLASS, HEIGHT x WIDTH)
-            %       EXPLANATION_FOR_INPUT2.
-            %
-            
-        end
 
         function code = getCode(obj,id,type)
             %
@@ -166,7 +148,7 @@ classdef MatlabColor < handle
             % Validate color names.
             %
             % <Input>
-            %   colorNames: (char, 1 x N) (cell of chars, M x N) (string, M x N)
+            %   colorNames: (text, M x N)
             %       Color names to validate.
             %   
             % <Output>
@@ -203,7 +185,7 @@ classdef MatlabColor < handle
             % Convert the color name to an RGB triplets.
             %
             % <Input>
-            %   colorName: (text scalar)
+            %   colorName: (text, 1 x 1)
             %       A color name.
 
             % Validate the input.

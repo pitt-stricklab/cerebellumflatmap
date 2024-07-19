@@ -1,15 +1,33 @@
 classdef CerebellumFlatmap < handle
     %
-    % Create a flat map of cerebellum that maps brain surface on each 
-    % sagittal slice onto a one-dimensional representation.
+    % Create a flatmap from the cerebellar volumetric data using the
+    % following method.
     %
+    %   1) Extract the boundary pixels of the cerebellum from each sagittal
+    %      slice. 
+    %   2) Cut open the boundary line at the pre-defined incision point.
+    %   3) Align the one-dimensional boundary line based on the pre-defined
+    %      origin point with the boundary lines obtained from other
+    %      sagittal slices.  
+    %
+    % Preparation of label volume data:
+    %
+    %   a) The cerebellar region to be unfolded must have both an incision
+    %      line and an origin line defined by arbitrary label IDs. 
+    %   b) Upon viewing the sagittal slices of the cerebellum, if there are
+    %      multiple separated parts, any part that does not contain both 
+    %      incision and origin labels on the boundary will be ignored and 
+    %      not included in the flatmap.
+    %   c) If the parts you want to unfold are separated on the sagittal
+    %      plane, you need to use an arbitrary label (e.g., Bridge) to
+    %      connect them.
 
     % HISTORY: testCreateBrainFlatMap.m
-    %   1.0 - 20230427 Mitsu Written.
+    %   1.0 - 20230427 Written by Mitsu
 
     % HISTORY:
-    %   1.0 - 20230518 Mitsu Written. Moved functions from
-    %                  testCreateBrainFlatMap.m
+    %   1.0 - 20230518 a) Written by Mitsu
+    %                  b) Moved functions from testCreateBrainFlatMap.m
     %   2.0 - 20230601 a) Major updates and improvements. 
     %                  b) Added showBoundaries() and showCurvaturemap().
     %                  c) Modified the figure appearance.
@@ -19,38 +37,43 @@ classdef CerebellumFlatmap < handle
     %                  b) Added showIntensityFlatmap().
     %   2.3 - 20231004 Added showBorderFlatmap().
     %   2.4 - 20231027 Added getCoordinateFlatmap().
+    %   2.5 - 20240719 Organized the codes and updated the docstrings.
     
     properties (Access = private)
 
         % Volume data of labels.
         pLabelVolume
 
-        % Size of the volume data.
-        pLengY
-        pLengX
-        pLengZ
+        % Size of the label volume data.
+        pLenY
+        pLenX
+        pLenZ
+
+        % 3D indices for each axis.
+        pIdxsY
+        pIdxsX
+        pIdxsZ
 
         % A cell to store boundary pixels on each sagittal slice.
-        pBoundaryDataCell
+        pBoundaryPixelsCell
 
         % Number of saggital slices.
         pNumSagittalSlices
 
-        % Dimension number of sagittal planes.
+        % The dimension number that corresponds to the direction 
+        % perpendicular to the sagittal plane in the input NIfTI data.
         pDimNumSagittal
 
-        % Labels in the volume.
-        pLabelBackground % Background
-        pLabelIncision   % Incision lines
-        pLabelOrigin     % Origin lines
-        pLabelBridge     % Bridge lines between objects. 
+        % Label IDs in the volume.
+        pLabelIdIncision % Incision points
+        pLabelIdOrigin   % Origin points
 
-        % Fixed label indices.
-        pLabelIndexBackground      = 0;
-        pLabelIndexBorder          = 1;
-        pLabelIndexInflectionPoint = 1;
-        pLabelIndexConcave         = 2;
-        pLabelIndexConvex          = 3;
+        % Constant label IDs.
+        pLabelIdBackground      = 0;
+        pLabelIdBorder          = 1;
+        pLabelIdInflectionPoint = 1;
+        pLabelIdConcave         = 2;
+        pLabelIdConvex          = 3;
 
         % Fixed label names.
         pLabelNameBackground      = "background";
@@ -92,6 +115,17 @@ classdef CerebellumFlatmap < handle
 
         % A MatlabColor handle.
         hMatlabColor
+
+        % Variable names for the colormap table.
+        pVarNameId        = "id";
+        pVarNameColor     = "color";
+        pVarNameLabelName = "labelName";
+        
+        % Variable names for the boundary pixels table.
+        pVarNameRow     = "row";
+        pVarNameColumn  = "column";
+        pVarNameLabelId = "labelId";
+        pVarNameOffset  = "offset";
         
     end
 
@@ -102,40 +136,45 @@ classdef CerebellumFlatmap < handle
         function obj = CerebellumFlatmap( ...
                 labelVolumePath, ...
                 dimNumSagittal, ...
-                labelBackground, ...
-                labelIncision, ...
-                labelOrigin, ...
-                labelBridge ...
+                labelIdIncision, ...
+                labelIdOrigin ...
             )
             %
             % <Input>
-            %   INPUT1: (CLASS, HEIGHT x WIDTH)
-            %       EXPLANATION_FOR_INPUT1.
-            %   INPUT2: (CLASS, HEIGHT x WIDTH)
-            %       EXPLANATION_FOR_INPUT2.
+            %   labelVolumePath: (text, 1 x 1)
+            %       A single NIfTI image file path. Each voxel value must
+            %       be a label ID (integer). Both NIfTI1 and NIfTI2 formats
+            %       are supported.
+            %   dimNumSagittal: (integer, 1 x 1)
+            %       The dimension number corresponding to the direction 
+            %       perpendicular to the sagittal plane in the input NIfTI
+            %       data.
+            %   labelIdIncision: (integer, 1 x 1)
+            %       The label ID used for the incision point.
+            %   labelIdOrigin: (integer, 1 x 1)
+            %       The label ID used for the origin point.
             %
 
             arguments
                 labelVolumePath {mustBeTextScalar}
                 dimNumSagittal  {mustBePosIntegerScalar,mustBeLessThanOrEqual(dimNumSagittal,3)}
-                labelBackground {mustBeIntegerScalar}
-                labelIncision   {mustBeIntegerScalar}
-                labelOrigin     {mustBeIntegerScalar}
-                labelBridge     {mustBeIntegerScalar}
+                labelIdIncision {mustBeIntegerScalar}
+                labelIdOrigin   {mustBeIntegerScalar}
             end
             
             % Load and store the 3D volume label data. (numeric, Y x X x Z)
             obj.pLabelVolume = niftiread(labelVolumePath);
 
             % Store the size of the volume.
-            [obj.pLengY,obj.pLengX,obj.pLengZ] = size(obj.pLabelVolume);
+            [obj.pLenY,obj.pLenX,obj.pLenZ] = size(obj.pLabelVolume);
+
+            % Store 3D indices for each axis (y, x, and z). (double, 1 x N)
+            [obj.pIdxsY,obj.pIdxsX,obj.pIdxsZ] = obj.create3dIndices();
 
             % Store the inputs.
             obj.pDimNumSagittal  = dimNumSagittal;
-            obj.pLabelBackground = labelBackground;
-            obj.pLabelIncision   = labelIncision;
-            obj.pLabelOrigin     = labelOrigin;
-            obj.pLabelBridge     = labelBridge;
+            obj.pLabelIdIncision = labelIdIncision;
+            obj.pLabelIdOrigin   = labelIdOrigin;
 
             % Create and store a MatlabColor handle.
             obj.hMatlabColor = MatlabColor();
@@ -144,8 +183,8 @@ classdef CerebellumFlatmap < handle
 
         function parse(obj,verbose)
             %
-            % Parse all sagittal slices and extract boundary data on each
-            % slice.
+            % Parse all sagittal slices and extract boundary pixels on each
+            % sagittal slice.
             %
             % <Input>
             % OPTIONS
@@ -161,34 +200,26 @@ classdef CerebellumFlatmap < handle
             % Get the number of sagittal slices.
             obj.pNumSagittalSlices = size(obj.pLabelVolume,obj.pDimNumSagittal);
             
-            % Initialize a cell to store coordinates of boundary pixels and
-            % their labels on each sagittal slice.
-            % (cell, numSagittalSlices x 1)
-            obj.pBoundaryDataCell = cell(obj.pNumSagittalSlices,1);
+            % Initialize a cell to store boundary pixels on each sagittal
+            % slice. (cell, numSagittalSlices x 1)
+            obj.pBoundaryPixelsCell = cell(obj.pNumSagittalSlices,1);
 
-            if verbose
-                fprintf("* Parsing all sagittal slices in the label volume data ...\n");
-            end
+            obj.printMsg(verbose, ...
+                "* Parsing all sagittal slices in the label volume data ...\n" ...
+            );
 
             for i = 1:obj.pNumSagittalSlices
 
-                if verbose
-                    fprintf("\n  Slice #%d:\n",i);
-                end
+                obj.printMsg(verbose,"\n  Slice #%d:\n",i);
 
-                % Get the coordinates of boundary pixels that surrounds a 
-                % label area in the sagittal slice, and the labels of each
-                % boundary pixel. 
-                [boundary,labels] = obj.getBoundaryPixels(i,verbose);
+                % Extract the coordinates of the boundary pixels of the
+                % label areas on the sagittal slice, their label IDs at those
+                % coordinates, and the offset of each boundary pixel from
+                % the origin point on the flatmap.
+                % (table, numBoundaryPixels x 4)
+                boundaryPixels = obj.extractBoundaryPixels(i,verbose);
 
-                % NOTE:
-                % boundary: (double, numBoundaryPixels x MN) or []
-                % labels:   (double, numBoundaryPixels x 1) or []
-
-                % Number of boundary pixels.
-                numBoundaryPixels = size(boundary,1);
-
-                if numBoundaryPixels == 0
+                if isempty(boundaryPixels)
                     continue;
                 end
 
@@ -200,29 +231,12 @@ classdef CerebellumFlatmap < handle
                 % Count up the number of valid slices.
                 obj.pNumValidSlices = obj.pNumValidSlices + 1;
 
-                % Sort the boundary pixels using the incision point.
-                [boundary,labels] = obj.sortBoundaryPixels(boundary,labels);
+                % Update the height of the flatmap.
+                obj.updateFlatmapHeight(boundaryPixels);                
 
-                % Find pixels that have the label of origin point.
-                % (logical, numBoundaryPixels x 1)
-                isOriginPoint = labels == obj.pLabelOrigin;
-    
-                % Get the index where the origin label appears first.
-                % (double, 1 x 1)
-                idxOriginPoint = find(isOriginPoint,1,'first');
-
-                % Create indices of each boundary pixel on the flatmap
-                % where an index of the pixel at the origin is 0, pixels 
-                % before it are negative, pixels after it are positive.
-                % (double, numBoundaryPixels x 1)
-                indicesOnFlatmap = (1:numBoundaryPixels)'-idxOriginPoint; % Transposed
-
-                % Store the height of the flatmap.
-                obj.storeFlatmapHeight(indicesOnFlatmap);
-
-                % Store the boundary data in the cell.
-                % (double, numBoundaryPixels x 4)
-                obj.pBoundaryDataCell{i} = [boundary,labels,indicesOnFlatmap];
+                % Store the boundary pixels in the cell.
+                % (cell, numSagittalSlices x 1) < (table, numBoundaryPixels x 4)
+                obj.pBoundaryPixelsCell{i} = boundaryPixels;
             
             end
 
@@ -233,25 +247,25 @@ classdef CerebellumFlatmap < handle
             % Show boundaries on each sagittal slice.
             %
             % <Input>
-            %   colorTablePath: (text scalar)
-            %       See showFlatmap().
+            %   colorTablePath: (text, 1 x 1)
+            %       See showLabelFlatmap().
             % OPTIONS
-            %   colorName: (text scalar)
-            %       A boundary color name. See plot() for the valid color
-            %       names.
-            %   animation: (logical, 1 x 1)
+            %   colorNameBoundary: (text, 1 x 1)
+            %       A color name for boundary lines. See plot() for the 
+            %       valid color names.
+            %   showAnimation: (logical, 1 x 1)
             %       Whether or not showing boundaries in animation.
             %
 
             arguments
                 obj
                 colorTablePath
-                options.colorName {mustBeTextScalar}    = "cyan"
-                options.animation {mustBeLogicalScalar} = false
+                options.colorNameBoundary {mustBeTextScalar}    = "cyan"
+                options.showAnimation     {mustBeLogicalScalar} = false
             end
 
-            colorName = options.colorName;
-            animation = options.animation;
+            colorNameBoundary = options.colorNameBoundary;
+            showAnimation     = options.showAnimation;
 
             % Validate the parsing of the volume data is done.
             obj.validateParsingDone();
@@ -259,20 +273,17 @@ classdef CerebellumFlatmap < handle
             % Validate the color lookup table file path.
             obj.validateColorTablePath(colorTablePath);
 
-            % Create a MatlabColor handle.
-            hMatlabColor = MatlabColor();
-
             % Validate the color name. (string, 1 x 1)
-            colorName = hMatlabColor.validateColorNames(colorName);
+            colorNameBoundary = obj.hMatlabColor.validateColorNames(colorNameBoundary);
 
-            % Read the color map. (uint8, numColors+1 x RGB)
-            [colorMap,~] = obj.readColorMap(colorTablePath);
+            % Read the color lookup table file. (table, numLabels+1 x 3)
+            colorMap = obj.readColorMap(colorTablePath);
 
             % Create a figure.
             figure;
             hAxes = gca;
 
-            if ~animation
+            if ~showAnimation
                 fprintf( ...
                     "Press any key to show the next slice.\n" + ...
                     "Press Ctrl+C to quit.\n" ...
@@ -294,7 +305,13 @@ classdef CerebellumFlatmap < handle
                 end
 
                 % Show the slice.
-                imshow(sagittalSlice,colorMap,'Parent',hAxes);
+                imshow( ...
+                    sagittalSlice, ...
+                    colorMap.(obj.pVarNameColor), ...
+                    'Parent',hAxes ...
+                );
+
+                % Set the title.
                 title(sprintf("Slice #%d",i));                
 
                 % Restore the x and y limit.
@@ -303,24 +320,25 @@ classdef CerebellumFlatmap < handle
                     hAxes.YLim = yLim;
                 end
 
-                % Get the coordinates of boundary pixels of an object on
-                % the sagittal slice. (double, numBoundaryPixels x MN)
-                boundary = obj.getBoundary(i);
+                % Get the boundary pixels on the sagittal slice.
+                % (table, numBoundaryPixels x 4) or []
+                boundaryPixels = obj.pBoundaryPixelsCell{i};
 
-                if ~isempty(boundary)
+                if ~isempty(boundaryPixels)
     
                     % Show the boundary.
                     hold on
                     plot(hAxes, ...
-                        boundary(:,2),boundary(:,1), ...
+                        boundaryPixels.(obj.pVarNameColumn), ...
+                        boundaryPixels.(obj.pVarNameRow), ...
                         'LineWidth',2, ...
-                        'Color',colorName ...
+                        'Color',colorNameBoundary ...
                     );                
                     hold off
 
                 end
 
-                if animation                    
+                if showAnimation                    
                     pause(0.1); % Wait for a moment.
                 else                    
                     pause;      % Wait until user press any key.
@@ -332,10 +350,10 @@ classdef CerebellumFlatmap < handle
 
         function hFig = showLabelFlatmap(obj,colorTablePath,options)
             %
-            % Create and show a flatmap.
+            % Create and show a label flatmap.
             %
             % <Input>
-            %   colorTablePath: (text scalar)
+            %   colorTablePath: (text, 1 x 1)
             %       A path of a color lookup table file for the labels in 
             %       the valume data that is created by 3D Slicer. Valid 
             %       file extension is ".ctbl".
@@ -344,8 +362,8 @@ classdef CerebellumFlatmap < handle
             %       A scaling ratio for stretching the flatmap in the X 
             %       direction. The value must be greater than or equal to
             %       1.
-            %   labelsToRemove: (numeric, M x N)
-            %       Label(s) to be removed from the final flatmap. The 
+            %   labelIdsToRemove: (numeric, M x N)
+            %       Label ID(s) to be removed from the final flatmap. The 
             %       value(s) must be positive integers.
             %
             % <Output>
@@ -355,13 +373,13 @@ classdef CerebellumFlatmap < handle
 
             arguments
                 obj {}
-                colorTablePath         {}
-                options.aspectRatioX   {} = 1
-                options.labelsToRemove {} = []
+                colorTablePath           {}
+                options.aspectRatioX     {} = 1
+                options.labelIdsToRemove {} = []
             end
 
-            aspectRatioX   = options.aspectRatioX;
-            labelsToRemove = options.labelsToRemove;
+            aspectRatioX     = options.aspectRatioX;
+            labelIdsToRemove = options.labelIdsToRemove;
 
             % Validate the parsing of the volume data is done.
             obj.validateParsingDone();
@@ -369,21 +387,19 @@ classdef CerebellumFlatmap < handle
             % Validate the inputs.
             obj.validateColorTablePath(colorTablePath);
             obj.validateAspectRatioX(aspectRatioX);
-            obj.validateLabelsToRemove(labelsToRemove);
+            obj.validateLabelsToRemove(labelIdsToRemove);
 
-            % Read the color map.
-            % (uint8, numColors+1 x RGB), (string, numColors+1 x 1)
-            [colorMap,colorLabels] = obj.readColorMap(colorTablePath);
+            % Read the color lookup table file. (table, numLabels+1 x 3)
+            colorMap = obj.readColorMap(colorTablePath);
 
-            % Create a label flatmap. (uint8, M x N)
-            labelFlatmap = obj.createFlatmap(labelsToRemove,"label");            
+            % Create a label flatmap. (uint8, M x numValidSlices)
+            flatmap = obj.createFlatmapLabel(labelIdsToRemove);            
             
             % Show the flatmap.
-            hFig = obj.createFigure( ...
-                labelFlatmap, ...
+            hFig = obj.showFlatmap( ...
+                flatmap, ...
                 aspectRatioX, ...
-                colorMap = colorMap, ...
-                colorLabels = colorLabels ...
+                colorMap = colorMap ...
             );
             
         end        
@@ -395,13 +411,10 @@ classdef CerebellumFlatmap < handle
             % <Input>
             % OPTIONS
             %   aspectRatioX: (numeric, 1 x 1)
-            %       A scaling ratio for stretching the flatmap in the X 
-            %       direction. The value must be greater than or equal to
-            %       1.
+            %       See showLabelFlatmap().
             %   labelsToRemove: (numeric, M x N)
-            %       Label(s) to be removed from the final flatmap. The 
-            %       value(s) must be positive integers.
-            %   colorNameBorder: (text scalar)
+            %       See showLabelFlatmap().
+            %   colorNameBorder: (text, 1 x 1)
             %       Color names for border line. See plot() for the valid
             %       color names.
             %
@@ -428,21 +441,17 @@ classdef CerebellumFlatmap < handle
             obj.validateAspectRatioX(aspectRatioX);
             obj.validateLabelsToRemove(labelsToRemove);
 
-            % Create a color map and color labels for a border map.
-            % (uint8, 1+1 x RGB), (string, 1+1 x 1)
-            [colorMap,colorLabels] = obj.createColorMapForBorder( ...
-                colorNameBorder ...
-            );
+            % Create a colormap for a border flatmap. (table, 2 x 3)
+            colorMap = obj.createColorMapForBorder(colorNameBorder);
 
-            % Create a label flatmap. (uint8, M x N)
-            labelFlatmap = obj.createFlatmap(labelsToRemove,"border");            
+            % Create a border flatmap. (uint8, M x numValidSlices)
+            flatmap = obj.createFlatmapBorder(labelsToRemove);            
             
             % Show the flatmap.
-            hFig = obj.createFigure( ...
-                labelFlatmap, ...
+            hFig = obj.showFlatmap( ...
+                flatmap, ...
                 aspectRatioX, ...
-                colorMap = colorMap, ...
-                colorLabels = colorLabels ...
+                colorMap = colorMap ...
             );
 
         end
@@ -457,7 +466,7 @@ classdef CerebellumFlatmap < handle
             %       See showFlatmap().
             %   labelsToRemove: (numeric, M x N)
             %       See showFlatmap().
-            %   colorNameConcave, colorNameConvex: (text scalar)
+            %   colorNameConcave, colorNameConvex: (text, 1 x 1)
             %       Color names for boundary points that have a negative 
             %       and positive curvature, respectively. See plot() for 
             %       the valid color names.
@@ -487,22 +496,20 @@ classdef CerebellumFlatmap < handle
             obj.validateAspectRatioX(aspectRatioX);
             obj.validateLabelsToRemove(labelsToRemove);
 
-            % Create a color map and color labels for a cuvature map.
-            % (uint8, 3+1 x RGB), (string, 3+1 x 1)
-            [colorMap,colorLabels] = obj.createColorMapForCurvature( ...
+            % Create a colormap for a cuvature map. (table, 4 x 3)
+            colorMap = obj.createColorMapForCurvature( ...
                 colorNameConcave, ...
                 colorNameConvex ...
             );
 
-            % Create a curvature flatmap. (uint8, M x N)
-            curvatureFlatmap = obj.createFlatmap(labelsToRemove,"curvature");  
+            % Create a curvature flatmap. (uint8, M x numValidSlices)
+            flatmap = obj.createFlatmapCurvature(labelsToRemove);  
 
             % Show the flatmap.
-            hFig = obj.createFigure( ...
-                curvatureFlatmap, ...
+            hFig = obj.showFlatmap( ...
+                flatmap, ...
                 aspectRatioX, ...
-                colorMap = colorMap, ...
-                colorLabels = colorLabels ...                
+                colorMap = colorMap ...
             );
 
         end
@@ -512,7 +519,7 @@ classdef CerebellumFlatmap < handle
             % Create and show a intensity flatmap.
             %
             % <Input>
-            %   intensityVolumePath: (text scalar)
+            %   intensityVolumePath: (text, 1 x 1)
             %       A path of a 3D volume intensity data aligned with the
             %       label volume data (ex .nii.gz). 
             % OPTIONS
@@ -550,36 +557,35 @@ classdef CerebellumFlatmap < handle
             [lengY,lengX,lengZ] = size(intensityVolume);
 
             % Validate the size matches the label volume size.
-            if lengY ~= obj.pLengY || lengX ~= obj.pLengX || lengZ ~= obj.pLengZ
+            if lengY ~= obj.pLenY || lengX ~= obj.pLenX || lengZ ~= obj.pLenZ
                 error( ...
                     "The size of the intensity volume data must match the " + ...
                     "label volume size." ...
                 );
             end
 
-            % Create a intensity flatmap. (double, M x N)
-            intensityFlatmap = obj.createFlatmap( ...
+            % Create a intensity flatmap. (double, M x numValidSlices)
+            flatmap = obj.createFlatmapIntensity( ...
                 labelsToRemove, ...
-                "intensity", ...
                 intensityVolume ...
             );
 
             % Show the flatmap.
-            hFig = obj.createFigure(intensityFlatmap,aspectRatioX);
+            hFig = obj.showFlatmap(flatmap,aspectRatioX);
 
         end        
 
-        function coordinateFlatmap = getCoordinateFlatmap(obj,options)
+        function flatmap = getCoordinateFlatmap(obj,options)
             %
-            % Create a flat map that represents the coordinates of each
+            % Create a flatmap that represents the coordinates of each
             % contour point on each slice.
             %
             % <Output>
-            %   coordinateFlatmap: (uint8, M x N x YX)
-            %       A flat map representing the coordinates of each contour
-            %       point on each slice. The first channel contains Y
-            %       coordinates (vertical axis), and the second channel
-            %       contains X coordinates (horizontal axis).
+            %   flatmap: (uint8, M x N x RC)
+            %       A flatmap representing the coordinates of each
+            %       boundary point on each slice. The first channel 
+            %       contains row coordinates and the second channel
+            %       contains column coordinates on the sagittal slice.
             %
 
             arguments
@@ -598,29 +604,28 @@ classdef CerebellumFlatmap < handle
             obj.validateAspectRatioX(aspectRatioX);
             obj.validateLabelsToRemove(labelsToRemove);
 
-            % Create a coordinate flatmap. (uint8, M x N x YX)
-            coordinateFlatmap = obj.createFlatmap( ...
-                labelsToRemove, ...
-                "coordinates" ...
-            );
+            % Create a coordinate flatmap. (uint8, M x numValidSlices x RC)
+            flatmap = obj.createFlatmapCoordinate(labelsToRemove);
 
         end
 
-        function xyTarget = mapPoints(obj,xyzSource)
+        function nmTarget = mapPoints(obj,xyzSource)
             %
-            % Map the specified points in the cerebellum to the flatmap.
+            % Return the coordinates for mapping points within the 
+            % cerebellum onto the flatmap.
             %
             % <Input>
-            %   xyzSource: (numeric, numPoints x XYZ)
-            %       xyz coordiantes of source points to be mapped on a
-            %       flatmap. The value must be greater than or equal to
-            %       0.5. Points that doesn't exist within the brain region,
-            %       which is used to create the flatmap, will be skipped.
+            %   xyzSource: (numeric, numSourcePoints x XYZ)
+            %       Coordinates (x, y, z) of points existing in the label
+            %       volume data and mapped to the flatmap. Points outside
+            %       the cerebellum are ignored.
             %
             % <Output>
-            %   xyTarget: (double, numTargetPoints x xy)
-            %       xy coordinates of the mapped (target) points on the
-            %       flatmap.
+            %   nmTarget: (double, numTargetPoints x NM)
+            %       Coordinates (n, m) of the mapped points on the flatmap.
+            %       N represents the horizontal axis value on the flat map
+            %       (index of the sagittal slice), and M represents the
+            %       vertical axis.
 
             % Validate the parsing of the volume data is done.
             obj.validateParsingDone();
@@ -629,24 +634,26 @@ classdef CerebellumFlatmap < handle
             % them to pixel indices. (numeric, XYZ)
             xyzSourceIdx = obj.validateSourcePoints(xyzSource);
 
-            % Create a mask of the extracted boundaries. (logical, Y x X x Z)
-            [boundaryMask,regionMask] = obj.createBoundaryMask();
+            % Create 3D binary masks for the boundary and interior of the 
+            % object within the label volume data. (logical, Y x X x Z)
+            [binMask3dBoundary,binMask3dInterior] = obj.createBinaryMasks3d();
 
             % Number of source points.
             numPointsSource = size(xyzSourceIdx,1);
 
-            % Initialize a cell to store the indices of mapped points on
-            % the flatmap. (cell, numPointsSource x 1) 
-            indicesOnFlatmapCell = cell(numPointsSource,1);
+            % Initialize a cell to store the coordinates of mapped points
+            % on the flatmap. (cell, numSourcePoints x 1) 
+            coordinatesOnFlatmapCell = cell(numPointsSource,1);
 
             for i = 1:numPointsSource
 
+                % Get the coordinates of the source point. (double, 1 x 1)
                 xSource = xyzSourceIdx(i,1);
                 ySource = xyzSourceIdx(i,2);
                 zSource = xyzSourceIdx(i,3);
 
                 % Skip if the point does not exist within the cerebellum.
-                if ~regionMask(ySource,xSource,zSource)
+                if ~binMask3dInterior(ySource,xSource,zSource)
                     fprintf( ...
                         "Point #%d (%s) was skipped as it does not exist " + ...
                         "within the cerebellum.\n", ...
@@ -657,90 +664,246 @@ classdef CerebellumFlatmap < handle
 
                 % Find the coordinate of the nearest boundary voxel to the
                 % source point.
-                [yNear,xNear,zNear] = obj.findNearestBoundaryVoxel( ...
-                    boundaryMask, ...
+                [yNearest,xNearest,zNearest] = obj.findNearestBoundaryVoxel( ...
+                    binMask3dBoundary, ...
                     xSource,ySource,zSource ...
                 );              
 
                 % Convert the index in 3D volume into an index on a 2D 
                 % slice based on the sagittal dimension number.
                 switch obj.pDimNumSagittal
-                    case 1; sliceIndex = yNear; mIndex = xNear; nIndex = zNear;
-                    case 2; sliceIndex = xNear; mIndex = yNear; nIndex = zNear;
-                    case 3; sliceIndex = zNear; mIndex = yNear; nIndex = xNear;
+                    case 1; sliceIndex = yNearest; row = xNearest; column = zNearest;
+                    case 2; sliceIndex = xNearest; row = yNearest; column = zNearest;
+                    case 3; sliceIndex = zNearest; row = yNearest; column = xNearest;
                 end
 
-                % Get the coordinates of boundary pixels of an object on
-                % the sagittal slice. (double, numBoundaryPixels x MN)
-                boundary = obj.getBoundary(sliceIndex);
+                % Get the boundary pixels on the sagittal slice.
+                % (table, numBoundaryPixels x 4) or []
+                boundaryPixels = obj.pBoundaryPixelsCell{sliceIndex};
 
                 % Get the index of the nearest boundary pixel on the slice.
                 % (logical, numBoundaryPixels x 1)
-                idx = boundary(:,1) == mIndex & boundary(:,2) == nIndex;
+                idxNearest = ...
+                    boundaryPixels.(obj.pVarNameRow) == row & ...
+                    boundaryPixels.(obj.pVarNameColumn) == column;
 
-                % Get indices of boundary pixels on the flatmap.
-                indicesOnFlatmap = obj.getIndicesOnFlatmap(sliceIndex);
+                % Get the offset of each boundary pixel on the flatmap.
+                % (double, numBoundaryPixels x 1)
+                offset = boundaryPixels.(obj.pVarNameOffset);
 
-                % Get the index of the nearest boundary pixel on the
+                % Get the offset of the nearest boundary pixel on the
                 % flatmap.
-                indexOnFlatmap = indicesOnFlatmap(idx);
+                offsetNearest = offset(idxNearest);
 
-                % Convert the index of the nearest boundary pixel and slice
-                % index to xy coordinates on the flatmap.
-                [x,y] = obj.covertIndexToCoordOnFlatmap(indexOnFlatmap,sliceIndex);
+                % Calculate the coordinates (m: vertical axis, n: horizontal
+                % axis) on the flatmap for the nearest boundary pixel.
+                [n,m] = obj.calcCoordinatesOnFlatmap(offsetNearest,sliceIndex);
 
-                % Store the coordinate in the cell. (double, 1 x xy)
-                indicesOnFlatmapCell{i} = [x,y];
+                % Store the coordinate in the cell. (double, 1 x nm)
+                coordinatesOnFlatmapCell{i} = [n,m];
             
             end
 
-            % Return the xy coordinates of mapped (target) points on the 
-            % flatmap. (double, numTargetPoints x xy)
-            xyTarget = vertcat(indicesOnFlatmapCell{:});
+            % Return the coordinates of mapped (target) points on the 
+            % flatmap. (double, numTargetPoints x nm)
+            nmTarget = vertcat(coordinatesOnFlatmapCell{:});
 
         end        
 
     end
 
     methods (Access = private)
-        
-        % Parsing boundary data.
 
-        function [boundary,labels] = getBoundaryPixels(obj,sagittalIndex,verbose)
+        function [idxsY,idxsX,idxsZ] = create3dIndices(obj)
+
+            % Create 3D indices for each axis (y, x, and z).
+            % (double, 1 x N)
+            idxsY = 1:obj.pLenY;
+            idxsX = 1:obj.pLenX;
+            idxsZ = 1:obj.pLenZ;
+
+        end
+        
+        % Parse boundary data.
+
+        function boundaryPixels = extractBoundaryPixels(obj,sagittalIndex,verbose)
             %
-            % Return the coordinates of boundary pixels of a label area in 
-            % the sagittal slice that have incision and origin points, and 
-            % the labels of each boundary pixel.
+            % Return the coordinates of the boundary pixels of the label
+            % areas on the sagittal slice, their label IDs at those
+            % coordinates, and the offset of each boundary pixel from the 
+            % origin point on the flatmap. If the slice does not include 
+            % both the incision label and the origin label, it returns an
+            % empty array [].
             %
             % <Output>
-            %   boundary: (double, numBoundaryPixels x MN) or []
-            %       Coordinates of boundary pixels on the sagittal slice.
-            %   labels: (double, numBoundaryPixels x 1) or []
-            %       Labels of each boundary pixel.
+            %   boundaryPixels: (table, numBoundaryPixels x 3) or []
+            %       row, column: (double, 1 x 1)
+            %           The coordinates of each boundary pixel on the 
+            %           sagittal slice.
+            %       labelId: (double, 1 x 1)
+            %           The label IDs of each each boundary pixel.
+            %       offset: (double, 1 x 1)
+            %           The the offset of each boundary pixel from the
+            %           origin point on the flatmap.
 
-            % Initialize the outputs.
-            boundary = [];
-            labels   = [];
+            boundaryPixels = [];
 
             % Get a sagittal slice of the index. (numeric, M x N)
             sagittalSlice = obj.getSagittalSlice(sagittalIndex);
 
+            % Get the linear indices of the pixels occupied by the target 
+            % object that should be unfolded, from the sagittal slice.
+            % (double, numPixels x 1)
+            pixelIdxsObjectTarget = obj.getPixelIndicesOfTargetObject( ...
+                sagittalSlice, ...
+                verbose ...
+            );
+
+            if isempty(pixelIdxsObjectTarget)
+                obj.printMsg(verbose, ...
+                    "    Skipped because no objects containing both the " + ...
+                    "incision point and the origin point were found.\n" ...
+                );
+                return;
+            end
+
+            % Create a binary image of the target object.
+            % (logical, rows x columns)
+            binMaskTarget = false(size(sagittalSlice));
+            binMaskTarget(pixelIdxsObjectTarget) = true;
+
+            % Get the exterior boundaries of the target object.
+            % (cell, numBoundaries x 1)
+            boundary = bwboundaries(binMaskTarget);
+
+            if numel(boundary) > 1
+                error("Multiple boundaries found for a single object.");
+            end
+
+            % Extract the pixel coordinates of the boundary.
+            % (double, numBoundaryPixels x 2)
+            boundary = boundary{1};
+
+            % NOTE:
+            % 1st column:
+            %   The coordinates (row) of each pixel in the sagittal slice.
+            % 2nd column:
+            %   The coordinates (column) of each pixel in the sagittal slice.
+
+            numBoundaryPixels = height(boundary);
+
+            % Initialize a table to store the coordinates of boundary 
+            % pixels, their label IDs on the sagittal plane, and their 
+            % offsets from the origin point on the flatmap. 
+            % (table, numBoundaryPixels x 4)
+            boundaryPixels = initTable( ...
+                [ ...
+                    obj.pVarNameRow, ...
+                    obj.pVarNameColumn, ...
+                    obj.pVarNameLabelId, ...
+                    obj.pVarNameOffset ...
+                ], ...
+                numBoundaryPixels, ...
+                ["double","double","double","double"] ...
+            );
+
+            % Store the coordinates of the boundary pixels.
+            boundaryPixels{:,1:2} = boundary;
+
+            % Get linear indices of each boundary pixel.
+            % (double, numBoundaryPixels x 1)
+            idxsBoundary = sub2ind( ...
+                size(sagittalSlice), ...
+                boundary(:,1),boundary(:,2) ...
+            );
+
+            % Get the label IDs of each boundary pixel.
+            % (numeric, numBoundaryPixels x 1)
+            labelIds = sagittalSlice(idxsBoundary);
+
+            % Store the label IDs.
+            boundaryPixels{:,3} = labelIds;
+
+            % Sort the boundary pixels with the incision point at the top.
+            boundaryPixels = obj.sortBoundaryPixels(boundaryPixels);
+
+            % Find the boundary pixels with the label of the origin point.
+            % (logical, numBoundaryPixels x 1)
+            isOriginPoint = ...
+                boundaryPixels.(obj.pVarNameLabelId) == obj.pLabelIdOrigin;
+
+            % Get the index where the origin label appears first.
+            % (double, 1 x 1)
+            idxOriginPoint = find(isOriginPoint,1,'first');
+
+            % Store the offset of each boundary pixel from the origin point
+            % on the flatmap. Pixels before the origin point have positive
+            % values, and pixels after the origin point have negative
+            % values.
+            boundaryPixels{:,4} = -1*(1:numBoundaryPixels)'+idxOriginPoint; % Transposed
+
+        end
+
+        function sagittalSlice = getSagittalSlice(obj,sagittalIndex)
+            %
+            % Return the sagittal slice of the index.
+            %
+
+            % Get the index within the label volume data for the sagittal
+            % slice.
+            [idxsY,idxsX,idxsZ] = obj.getSagittalSliceIndices(sagittalIndex);
+
+            % Return the sagittal slice. (numeric, M x N)
+            sagittalSlice = squeeze(obj.pLabelVolume(idxsY,idxsX,idxsZ));
+
+        end
+
+        function [idxsY,idxsX,idxsZ] = getSagittalSliceIndices(obj,sagittalIndex)
+            %
+            % Get the index within the label volume data for the sagittal
+            % slice.
+            %
+
+            % Get the 3D indices for each axis.
+            idxsY = obj.pIdxsY;
+            idxsX = obj.pIdxsX;
+            idxsZ = obj.pIdxsZ;
+
+            % Rewrite the index based on the dimension number of sagittal
+            % planes.
+            switch obj.pDimNumSagittal
+                case 1; idxsY = sagittalIndex;
+                case 2; idxsX = sagittalIndex;
+                case 3; idxsZ = sagittalIndex;
+            end
+
+        end
+
+        function pixelIdxsObjectTarget = getPixelIndicesOfTargetObject(obj, ...
+                sagittalSlice, ...
+                verbose ...
+            )
+            %
+            % Return the linear indices of the pixels occupied by the
+            % target object (a single object containing both the incision 
+            % point and the origin point) that should be unfolded, from the
+            % sagittal slice.
+            %
+
+            pixelIdxsObjectTarget = [];
+
             % Get a binary image of label areas (non-background area).
             % (logical, M x N)
-            binImage = sagittalSlice ~= obj.pLabelBackground;
+            binImage = sagittalSlice ~= obj.pLabelIdBackground;
 
             % Return [] if there is no label area.
             if sum(binImage) == 0
-                
-                if verbose
-                    fprintf("    No object found.\n");
-                end
-
+                obj.printMsg(verbose,"    No object found.\n");
                 return;
             end
 
             % Fill holes within the label areas.
-            binImage = imfill(binImage,'holes');
+            binImage = imfill(binImage,"holes");
 
             % Find and count connected components. (struct, 1 x 1)
             components = bwconncomp(binImage);
@@ -748,125 +911,75 @@ classdef CerebellumFlatmap < handle
             % Number of objects found.
             numObjects = components.NumObjects;
 
-            if verbose
-                fprintf("    %d object(s) found.\n",numObjects);
-            end
+            obj.printMsg(verbose,"    %d object(s) found.\n",numObjects);
 
-            pixelIdxListTarget = [];
+            numObjectsTarget = 0;
 
             for i = 1:numObjects
 
-                if verbose
-                    fprintf("    Object #%d: ",i);
-                end
+                obj.printMsg(verbose,"      Object #%d: ",i);
 
-                % Linear indices of pixel of the object.
+                % Get the linear indices of the object's pixels.
                 % (double, numPixels x 1)
-                pixelIdxList = components.PixelIdxList{i};
+                pixelIdxsObject = components.PixelIdxList{i};
         
                 % Get the labels of the object. (numeric, numPixels x 1)
-                labelsObject = sagittalSlice(pixelIdxList);
+                labelsObject = sagittalSlice(pixelIdxsObject);
 
                 % Find pixels that have the label of incision and origin 
                 % lines. (logical, numPixels x 1)
-                isIncisionPoint = labelsObject == obj.pLabelIncision;
-                isOriginPoint   = labelsObject == obj.pLabelOrigin;
+                isIncisionPoint = labelsObject == obj.pLabelIdIncision;
+                isOriginPoint   = labelsObject == obj.pLabelIdOrigin;
 
+                % Skip the object if it does not contain both the incision
+                % label and the origin label.
                 if sum(isIncisionPoint) == 0 || sum(isOriginPoint) == 0
-                    obj.printObjectSkipped(labelsObject,verbose);
+                    obj.printMsg(verbose, ...
+                        "Skipped because it does not contain both the " + ...
+                        "incision point and the origin point. (labels: %s)\n", ...
+                        strJoinMatComma(double(unique(labelsObject)')) ...
+                    );
                     continue;
                 end
 
-                if ~isempty(pixelIdxListTarget)
-                    error("There are multiple objects that have incision and origin point.");
-                end
+                % Store the pixel indices of the target object.
+                pixelIdxsObjectTarget = pixelIdxsObject;
 
-                pixelIdxListTarget = pixelIdxList;
+                obj.printMsg(verbose,"Valid to extract boundary data.\n");
 
-                if verbose
-                    fprintf("Valid to extract boundary data.\n");
-                end
-        
+                numObjectsTarget = numObjectsTarget + 1;
+
             end
 
-            if isempty(pixelIdxListTarget)
-                obj.printSliceSkipped(verbose);
-                return;
+            % Disallow a single slice from having multiple objects that
+            % contain both the incision point and the origin point. 
+            if numObjectsTarget > 1
+                error( ...
+                    "Currently, multiple objects containing both the " + ...
+                    "incision point and the origin point within a single " + ...
+                    "slice are not supported." ...
+                );
             end
-
-            % Create a binary image of the target object. (logical, M x N)
-            binMaskTarget = false(size(binImage));
-            binMaskTarget(pixelIdxListTarget) = true;
-
-            % Get the boundary of the target object. (cell, numBoundaries x 1)
-            boundary = bwboundaries(binMaskTarget);
-
-            if numel(boundary) > 1
-                error("Multiple boundaries found for a single object.");
-            end
-
-            % Return the pixel coordinates of the boundary.
-            % (double, numBoundaryPixels x MN)
-            boundary = boundary{1};
-
-            % NOTE:
-            % MN: The row and column on the sagittal slice.
-
-            % Number of boundary pixels.
-            numBoundaryPixels = size(boundary,1);
-
-            % Initialize the output labels.
-            labels = zeros(numBoundaryPixels,1);
-
-            % Return the labels of the boundary pixels.
-            for i = 1:numBoundaryPixels
-                labels(i) = sagittalSlice(boundary(i,1),boundary(i,2));
-            end            
 
         end
 
-        function sagittalSlice = getSagittalSlice(obj,index)
+        function boundaryPixels = sortBoundaryPixels(obj,boundaryPixels)
             %
-            % Return the sagittal slice of the index.
-            %
-
-            % Prepare all indices of y, x, and z.
-            yidx = 1:obj.pLengY;
-            xidx = 1:obj.pLengX;
-            zidx = 1:obj.pLengZ;
-
-            % Overwrite the index based on the dimension number of sagittal
-            % planes.
-            switch obj.pDimNumSagittal
-                case 1; yidx = index;
-                case 2; xidx = index;
-                case 3; zidx = index;
-            end
-
-            % Return the sagittal slice. (numeric, M x N)
-            sagittalSlice = squeeze(obj.pLabelVolume(yidx,xidx,zidx));
-
-        end
-
-        function [boundary,labels] = sortBoundaryPixels(obj,boundary,labels)
-            %
-            % Sort the boundary pixels using the incision point.
+            % Sort the boundary pixels with the incision point at the top.
             %
 
             % Find pixels that have the label of incision point.
             % (logical, numBoundaryPixels x 1)
-            isIncisionPoint = labels == obj.pLabelIncision;
+            isIncisionPoint = ...
+                boundaryPixels.(obj.pVarNameLabelId) == obj.pLabelIdIncision;
 
             % Get the index where the incision label appears first.
             % (double, 1 x 1)
             idxIncisionPoint = find(isIncisionPoint,1,'first');
-
-            % Number of boundary pixels.
-            numBoundaryPixels = size(boundary,1);
-        
+       
             % Create indices of boundary pixels after the incision point.
             % (double, 1 x numPoints)
-            idxsAfter = (idxIncisionPoint:numBoundaryPixels);
+            idxsAfter = (idxIncisionPoint:height(boundaryPixels));
         
             % Create indices of boundary pixels before the incision point.
             % (double, 1 x numPoints)
@@ -882,17 +995,20 @@ classdef CerebellumFlatmap < handle
             idxsOrdered = [idxsAfter,idxsBefore];
         
             % Sort the boundary pixels by the ordered indices.
-            boundary = boundary(idxsOrdered,:);
-            labels   = labels(idxsOrdered);
+            boundaryPixels = boundaryPixels(idxsOrdered,:);
 
         end
         
-        function storeFlatmapHeight(obj,indicesOnFlatmap)
+        function updateFlatmapHeight(obj,boundaryPixels)
+
+            % Get the offset of boundary pixels in the flatmap.
+            % (double, numBoundaryPixels x 1)
+            offset = boundaryPixels.(obj.pVarNameOffset);
 
             % Calculate the height of the flatmap above and below the 
             % center line.
-            flatmapHeightTop    = -1*min(indicesOnFlatmap);
-            flatmapHeightBottom =    max(indicesOnFlatmap);
+            flatmapHeightTop    =    max(offset);
+            flatmapHeightBottom = -1*min(offset);
 
             % Update the height of the flatmap.
             if flatmapHeightTop > obj.pFlatmapHeightTop
@@ -904,340 +1020,413 @@ classdef CerebellumFlatmap < handle
 
         end
 
-        % Create color maps.
+        % Create colormaps.
 
-        function [colorMap,colorLabels] = readColorMap(obj,colorTablePath)
+        function colorMap = readColorMap(obj,colorTablePath)
             
-            % Read the color table file. (table, numColors x 6)
+            % Initialize a colormap with the background.
+            % (table, 1 x 3)
+            colorMap = obj.initColorMap();
+
+            % Read the color lookup table file. (table, numColors x 6)
             colorTable = readtable( ...
                 colorTablePath, ...
                 'fileType','delimitedtext', ...
                 'Delimiter',' ', ...
                 'NumHeaderLines',2 ...
-            );            
-        
-            % Extract the colors (RGB triplets) and their labels.
-            % (double, numColors x RGB), (cell, numColors x 1)
-            colorMapFile    = colorTable{:,3:5};
-            colorLabelsFile = colorTable{:,2};
+            );
 
-            % Initialize a color map with the background.
-            % (uint8, 1 x RGB), (string, 1 x 1)
-            [colorMap,colorLabels] = obj.initColorMap();
+            % Initialize a cell to store the colormap data. (cell, numColors x 3)
+            colorCell = cell(height(colorTable),3);
 
-            % Append the extracted colors and labels to the color map.
-            % (uint8, M+1 x RGB), (string, M+1 x 1)
-            colorMap    = [colorMap;colorMapFile];
-            colorLabels = [colorLabels;colorLabelsFile];
+            % Extract the label ID, color, and name.
+            colorCell(:,1) = num2cell(colorTable{:,1});
+            colorCell(:,2) = num2cell(colorTable{:,3:5},2);
+            colorCell(:,3) = colorTable{:,2};
 
-            % NOTE:
-            % Index, Label Name
-            %   0  , Background
-            %   1  , Label 1 
-            %   2  , Label 2
-            %   3  , Label 3
+            % Add the data to the colormap. (table, numColors+1 x 3)
+            colorMap = [colorMap;colorCell];
         
         end
 
-        function [colorMap,colorLabels] = createColorMapForCurvature(obj, ...
-                colorNameConcave, ...
-                colorNameConvex ...
-            )
+        function colorMap = createColorMapForBorder(obj,colorNameBorder)
 
-            % Initialize a color map with the background.
-            % (uint8, 1 x RGB), (string, 1 x 1)
-            [colorMap,colorLabels] = obj.initColorMap();
+            % Initialize a colormap with the background.
+            % (table, 1 x 3)
+            colorMap = obj.initColorMap();
 
-            % Add the colors for the inflection, concave, and convex points 
-            % to the color map. (uint8, 3+1 x RGB), (string, 3+1 x 1)
-            [colorMap,colorLabels] = obj.addColorMap(colorMap,colorLabels, ...
-                obj.pLabelNameInflectionPoint, ...
-                obj.pLabelColorInflectionPoint ...
-            );
-            [colorMap,colorLabels] = obj.addColorMap(colorMap,colorLabels, ...
-                obj.pLabelNameConcave, ...
-                colorNameConcave ...
-            );
-            [colorMap,colorLabels] = obj.addColorMap(colorMap,colorLabels, ...
-                obj.pLabelNameConvex, ...
-                colorNameConvex ...
-            );
-
-            % NOTE:
-            % Index, Label Name
-            %   0  , Background
-            %   1  , Inflection point
-            %   2  , Concave
-            %   3  , Convex
-
-        end
-
-        function [colorMap,colorLabels] = createColorMapForBorder(obj, ...
-                colorNameBorder ...
-            )
-
-            % Initialize a color map with the background.
-            % (uint8, 1 x RGB), (string, 1 x 1)
-            [colorMap,colorLabels] = obj.initColorMap();
-
-            % Add the colors for border points to the color map.
-            % (uint8, 1+1 x RGB), (string, 1+1 x 1)
-            [colorMap,colorLabels] = obj.addColorMap(colorMap,colorLabels, ...
+            % Add a border point to the colormap.
+            colorMap = obj.addColorMap(colorMap, ...
+                obj.pLabelIdBorder, ...
                 obj.pLabelNameBorder, ...
                 colorNameBorder ...
             );
 
-            % NOTE:
-            % Index, Label Name
-            %   0  , Background
-            %   1  , Border
-
         end
 
-        function [colorMap,colorLabels] = addColorMap(obj,colorMap,colorLabels, ...
-                labelName, ...
-                colorName ...
+        function colorMap = createColorMapForCurvature(obj, ...
+                colorNameConcave, ...
+                colorNameConvex ...
             )
 
-            % Validate the color name and get the color in RGB triplets 
-            % format in [0,1]. (double, 1 x RGB)
-            color = obj.hMatlabColor.convertToRgbTriplets( ...
-                colorName ...
+            % Initialize a colormap with the background.
+            % (table, 1 x 3)
+            colorMap = obj.initColorMap();
+
+            % Add an inflection point to the colormap.
+            colorMap = obj.addColorMap(colorMap, ...
+                obj.pLabelIdInflectionPoint, ...
+                obj.pLabelNameInflectionPoint, ...
+                obj.pLabelColorInflectionPoint ...
             );
 
-            % Append the color map. (uint8, M+1 x RGB)
-            colorMap = [colorMap;uint8(255*color)];
-
-            % Append the color labels. (string, M+1 x 1)
-            colorLabels = [colorLabels;labelName];
+            % Add a concave point to the colormap.
+            colorMap = obj.addColorMap(colorMap, ...
+                obj.pLabelIdConcave, ...
+                obj.pLabelNameConcave, ...
+                colorNameConcave ...
+            );
+            
+            % Add a convex point to the colormap.
+            colorMap = obj.addColorMap(colorMap, ...
+                obj.pLabelIdConvex, ...
+                obj.pLabelNameConvex, ...
+                colorNameConvex ...
+            );
 
         end
 
-        function [colorMap,colorLabels] = initColorMap(obj)
+        function colorMap = initColorMap(obj)
             %
-            % Initialize a color map with the background.
+            % Initialize a colormap with the background.
             %
+            % <Output>:
+            %   colorMap: (table, 1 x 3)
+            %       1st column: (double, 1 x 1)
+            %           Label ID.
+            %       2nd column: (uint8, 1 x RGB)
+            %           Label color.
+            %       3rd column: (string, 1 x 1)
+            %           Label name.
 
-            % Get the background color in RGB triplets format in [0,1].
-            % (double, 1 x RGB)
-            color = obj.hMatlabColor.convertToRgbTriplets( ...
+            % Initialize a table to store label IDs, colors, and label names.
+            % (table, numLabels x 3)
+            colorMap = initTable( ...
+                [ ...
+                    obj.pVarNameId, ...
+                    obj.pVarNameColor, ...
+                    obj.pVarNameLabelName ...
+                ], ...
+                0, ...
+                ["double","uint8","string"] ...
+            );
+
+            % Add a background to the colormap.
+            colorMap = obj.addColorMap(colorMap, ...
+                obj.pLabelIdBackground, ...
+                obj.pLabelNameBackground, ...
                 obj.pLabelColorBackground ...
             );
 
-            % Create a color map. (uint8, 1 x RGB)
-            colorMap = uint8(255*color);
+        end
 
-            % Create a color label. (string, 1 x 1)
-            colorLabels = obj.pLabelNameBackground;
+        function colorMap = addColorMap(obj,colorMap,labelId,labelName,colorName)
+
+            % Validate the color and get the color in RGB triplets format 
+            % with values in the range [0,1]. (double, 1 x RGB)
+            color = obj.hMatlabColor.convertToRgbTriplets(colorName);
+
+            % Convert the color to uint8. (uint8, 1 x RGB)
+            color = uint8(255*color);
+
+            % Add the label to the colormap. (table, numLabels x 3)
+            colorMap = [colorMap;{labelId,color,labelName}];
 
         end
 
-        % Creating flatmaps.
+        % Create flatmaps.
 
-        function flatmap = createFlatmap(obj,labelsToRemove,type,varargin)
+        function flatmap = createFlatmapLabel(obj,labelIdsToRemove)
 
-            switch type
-                case "intensity";   precision = "double"; channel = 1;
-                case "coordinates"; precision = "uint8";  channel = 2;
-                otherwise;          precision = "uint8";  channel = 1;
-            end
-
-            % Initialize a flatmap. (numeric, M x numValidSlices x channel)
-            flatmap = obj.initImage(precision,channel);
+            % Initialize a flatmap. (uint8, M x numValidSlices)
+            flatmap = obj.initFlatmap("uint8",1);
 
             for i = 1:obj.pNumSagittalSlices
 
-                % Get the labels of boundary pixels of an object on the
-                % sagittal slice. (double, numBoundaryPixels x 1)
-                labels = obj.getLabels(i);
+                % Get the boundary pixels on the sagittal slice.
+                % (table, numBoundaryPixels x 4) or []
+                boundaryPixels = obj.pBoundaryPixelsCell{i};
 
-                if isempty(labels)
+                if isempty(boundaryPixels)
                     continue;
                 end
 
-                switch type
+                % Get the label IDs. (double, numBoundaryPixels x 1)
+                valuesToInsert = boundaryPixels.(obj.pVarNameLabelId);
 
-                    case "label"
+                % Replace the values of pixels with the label ID to be 
+                % removed with the background label ID.
+                valuesToInsert = obj.replaceValuesWithBackground( ...
+                    valuesToInsert, ...
+                    boundaryPixels, ...
+                    labelIdsToRemove ...
+                );
 
-                        % Use the brain region labels for the flatmap.
-                        valuesToInsert = labels;
-
-                    case "border"
-
-                        % Create labels for borders.
-                        % (double, numBoundaryPixels x 1)
-                        valuesToInsert = obj.createBorderLabels(labels);
-
-                    case "curvature"
-
-                        % Create labels based on curvature of each boundary
-                        % point for the curvature map.
-                        % (double, numBoundaryPixels x 1)
-                        valuesToInsert = obj.createCurvatureLabels( ...
-                            obj.getBoundary(i) ...
-                        );
-
-                    case "intensity"
-
-                        % Get intensity values of each boundary point.
-                        % (double, numBoundaryPixels x 1)
-                        valuesToInsert = obj.getIntensityOnBoundary( ...
-                            varargin{:}, ...
-                            obj.getBoundary(i), ...
-                            i ...
-                        );
-
-                    case "coordinates"
-
-                        % Get the y and x coordinates of the boundary
-                        % points on the slice. (double, numBoundaryPixels x YX)
-                        boundary = obj.getBoundary(i);
-
-                        % Rearrange the dimensions.
-                        % (double, numBoundaryPixels x 1 x YX)
-                        valuesToInsert = permute(boundary,[1,3,2]);
-
-                    otherwise
-
-                        error("Unknown type of flatmap: %s",type);
-
-                end
-
-                if ~isempty(labelsToRemove)
-
-                    % Replace the values in the location corresponding to
-                    % the label to be removed with the background value (0).
-                    valuesToInsert = obj.replaceValuesWithBackground( ...
-                        valuesToInsert, ...
-                        labels, ...
-                        labelsToRemove ...
-                    );
-
-                end
-
-                % Insert the labels to the flatmap.
-                flatmap = obj.insertLabelsToFlatmap(flatmap,valuesToInsert,i);
+                % Insert the values to the flatmap.
+                flatmap = obj.insertValuesToFlatmap( ...
+                    flatmap, ...
+                    boundaryPixels, ...
+                    valuesToInsert, ...
+                    i ...
+                );
             
             end
 
         end
 
-        function image = initImage(obj,precision,channel)
+        function flatmap = createFlatmapBorder(obj,labelIdsToRemove)
 
-            % Calculate the height of the flatmap and curvature map.
-            height = obj.pFlatmapHeightTop + obj.pFlatmapHeightBottom;
+            % Initialize a flatmap. (uint8, M x numValidSlices)
+            flatmap = obj.initFlatmap("uint8",1);
 
-            % Initialize the image. (numeric, M x numValidSlices)
-            image = zeros([height,obj.pNumValidSlices,channel],precision);
+            for i = 1:obj.pNumSagittalSlices
 
-        end
+                % Get the boundary pixels on the sagittal slice.
+                % (table, numBoundaryPixels x 4) or []
+                boundaryPixels = obj.pBoundaryPixelsCell{i};
 
-        function indices = createBorderLabels(obj,labels)
-
-            previous = [];
-
-            numPoints = numel(labels);
-
-            % Initialize indices indicating whether the pixel is part of 
-            % borders. (logical, numPoints x 1)
-            isBorder = false(numPoints,1);
-
-            for j = 1:numPoints
-
-                label = labels(j);
-
-                % Consider the first and last pixels as the border.
-                if j == 1 || j == numPoints
-
-                    isBorder(j) = true;
-
-                    previous = label;
-
-                    continue;
-
-                end
-
-                if label == previous
+                if isempty(boundaryPixels)
                     continue;
                 end
 
-                % Consider two pixels with different labels along adjacent
-                % boundaries as the border.
-                isBorder(j)   = true;
-                isBorder(j-1) = true;
+                % Calculate the values based on the border information. 
+                % (double, numBoundaryPixels x 1)
+                valuesToInsert = obj.calcValuesBorder(boundaryPixels);
 
-                previous = label;
+                % Replace the values of pixels with the label ID to be 
+                % removed with the background label ID.
+                valuesToInsert = obj.replaceValuesWithBackground( ...
+                    valuesToInsert, ...
+                    boundaryPixels, ...
+                    labelIdsToRemove ...
+                );
 
+                % Insert the values to the flatmap.
+                flatmap = obj.insertValuesToFlatmap( ...
+                    flatmap, ...
+                    boundaryPixels, ...
+                    valuesToInsert, ...
+                    i ...
+                );
+            
             end
 
-            % Assign the index for border to the pixels and the index for 
-            % background to everything else.
-            indices = repmat(obj.pLabelIndexBackground,[numPoints,1]);
-            indices(isBorder) = obj.pLabelIndexBorder;
-
         end
 
-        function indices = createCurvatureLabels(obj,boundary)
+        function values = calcValuesBorder(obj,boundaryPixels)
             %
-            % Create label indices based on curvature of each boundary
-            % point for the curvature map. Assign an index of 2 to points
-            % with negative curvature, an index of 3 to points with
-            % positive curvature, and an index of 1 to points with zero
-            % curvature (inflection points).
+            % Calculate the values on the flatmap for each boundary pixel
+            % based on the border information.
             %
 
-            % Number of boundary pixels.
-            numBoundaryPixels = size(boundary,1);
+            numBoundaryPixels = height(boundaryPixels);
 
-            % Calculate curvature of each boundary point.
-            % (double, numBoundaryPixels x 1)
-            curvatures = obj.calcCurvature2D(boundary(:,2),boundary(:,1));
-
-            % Assign label indices based on the curvature's sign.
-            % (double, numBoundaryPixels x 1)
-            indices = repmat(obj.pLabelIndexInflectionPoint,[numBoundaryPixels,1]);
-            indices(curvatures < 0) = obj.pLabelIndexConcave;
-            indices(curvatures > 0) = obj.pLabelIndexConvex;
-
-        end
-
-        function curvatures = calcCurvature2D(obj,xs,ys)
-            %
-            % Calculate the curvature of a 2D contour given by x and y
-            % coordinates.
-            %
-            
-            dx  = gradient(xs);
-            d2x = gradient(dx);
-            dy  = gradient(ys);
-            d2y = gradient(dy);
-            
-            curvatures = (dx.*d2y - dy.*d2x) ./ ((dx.^2 + dy.^2).^(3/2));
-        
-        end
-
-        function values = getIntensityOnBoundary(obj, ...
-                intensityVolume, ...
-                boundary, ...
-                sliceIndex ...
-            )
-
-            numBoundaryPixels = size(boundary,1);
-
-            % Initialize the output. (double, numBoundaryPixels x 1)
-            values = zeros(numBoundaryPixels,1);                  
+            % Initialize a logical array that indicates whether each pixel 
+            % is a border pixel between two different labels.
+            % (logical, numBoundaryPixels x 1)
+            isBorder = false(numBoundaryPixels,1);
 
             for i = 1:numBoundaryPixels
 
-                m = boundary(i,1);
-                n = boundary(i,2);
+                % Get the label ID. (double, 1 x 1)
+                labelId = boundaryPixels{i,obj.pVarNameLabelId};
+
+                % Consider the first and last pixels as border pixels.
+                if i == 1 || i == numBoundaryPixels
+
+                    isBorder(i) = true;
+
+                    labelIdPrevious = labelId;
+
+                    continue;
+
+                end
+
+                if labelId == labelIdPrevious
+                    continue;
+                end
+
+                % Two pixels with different labels that are adjacent to
+                % each other are considered border pixels.
+                isBorder(i)   = true;
+                isBorder(i-1) = true;
+
+                labelIdPrevious = labelId;
+
+            end
+
+            % Assign the border label ID to the border pixels and the
+            % background label ID to all other pixels.
+            values = repmat(obj.pLabelIdBackground,[numBoundaryPixels,1]);
+            values(isBorder) = obj.pLabelIdBorder;
+
+        end
+
+        function flatmap = createFlatmapCurvature(obj,labelIdsToRemove)
+
+            % Initialize a flatmap. (uint8, M x numValidSlices)
+            flatmap = obj.initFlatmap("uint8",1);
+
+            for i = 1:obj.pNumSagittalSlices
+
+                % Get the boundary pixels on the sagittal slice.
+                % (table, numBoundaryPixels x 4) or []
+                boundaryPixels = obj.pBoundaryPixelsCell{i};
+
+                if isempty(boundaryPixels)
+                    continue;
+                end
+
+                % Calculate the values based on the curvature information. 
+                % (double, numBoundaryPixels x 1)
+                valuesToInsert = obj.calcValuesCurvature(boundaryPixels);
+
+                % Replace the values of pixels with the label ID to be 
+                % removed with the background label ID.
+                valuesToInsert = obj.replaceValuesWithBackground( ...
+                    valuesToInsert, ...
+                    boundaryPixels, ...
+                    labelIdsToRemove ...
+                );
+
+                % Insert the values to the flatmap.
+                flatmap = obj.insertValuesToFlatmap( ...
+                    flatmap, ...
+                    boundaryPixels, ...
+                    valuesToInsert, ...
+                    i ...
+                );
+            
+            end
+
+        end
+
+        function values = calcValuesCurvature(obj,boundaryPixels)
+            %
+            % Calculate the values based on curvature of each boundary
+            % point for the curvature map. Assign a label ID of 2 to points
+            % with negative curvature, a label ID of 3 to points with
+            % positive curvature, and a label ID of 1 to points with zero
+            % curvature (inflection points).
+            %
+
+            numBoundaryPixels = height(boundaryPixels);
+
+            % Calculate the curvature at each point on the boundary.
+            % (double, numBoundaryPixels x 1)
+            curvatures = obj.calcCurvature2D(boundaryPixels);
+
+            % Assign label IDs based on the curvature's sign.
+            % (double, numBoundaryPixels x 1)
+            values = repmat(obj.pLabelIdInflectionPoint,[numBoundaryPixels,1]);
+            values(curvatures < 0) = obj.pLabelIdConcave;
+            values(curvatures > 0) = obj.pLabelIdConvex;
+
+        end
+
+        function curvatures = calcCurvature2D(obj,boundaryPixels)
+
+            % Get the column and row coordinates of each boundary pixel. 
+            % (double, numBoundaryPixels x 1)
+            cs = boundaryPixels.(obj.pVarNameColumn);
+            rs = boundaryPixels.(obj.pVarNameRow);
+            
+            % Calculate the first and second gradients.
+            dc  = gradient(cs);
+            d2c = gradient(dc);
+            dr  = gradient(rs);
+            d2r = gradient(dr);
+            
+            % Calculate the curvature at each point on the boundary curve.
+            curvatures = (dc.*d2r - dr.*d2c) ./ ((dc.^2 + dr.^2).^(3/2));
+        
+        end
+
+        function flatmap = createFlatmapIntensity(obj, ...
+                labelIdsToRemove, ...
+                intensityVolume ...
+            )
+
+            % Initialize a flatmap. (double, M x numValidSlices)
+            flatmap = obj.initFlatmap("double",1);
+
+            for i = 1:obj.pNumSagittalSlices
+
+                % Get the boundary pixels on the sagittal slice.
+                % (table, numBoundaryPixels x 4) or []
+                boundaryPixels = obj.pBoundaryPixelsCell{i};
+
+                if isempty(boundaryPixels)
+                    continue;
+                end
+
+                % Get intensity values of each boundary point.
+                % (double, numBoundaryPixels x 1)
+                valuesToInsert = obj.getValuesIntensity( ...
+                    intensityVolume, ...
+                    boundaryPixels, ...
+                    i ...
+                );
+
+                % Replace the values of pixels with the label ID to be 
+                % removed with the background label ID.
+                valuesToInsert = obj.replaceValuesWithBackground( ...
+                    valuesToInsert, ...
+                    boundaryPixels, ...
+                    labelIdsToRemove ...
+                );
+
+                % Insert the values to the flatmap.
+                flatmap = obj.insertValuesToFlatmap( ...
+                    flatmap, ...
+                    boundaryPixels, ...
+                    valuesToInsert, ...
+                    i ...
+                );
+            
+            end
+
+        end
+
+        function values = getValuesIntensity(obj, ...
+                intensityVolume, ...
+                boundaryPixels, ...
+                sliceIndex ...
+            )
+            %
+            % Return the intensity at each boundary pixel based on the
+            % volumetric data containing intensity values for each voxel,
+            % aligned with the volumetric data containing labels.
+            %
+
+            numBoundaryPixels = height(boundaryPixels);
+
+            % Initialize the output. (double, numBoundaryPixels x 1)
+            values = zeros(numBoundaryPixels,1);
+           
+            for i = 1:numBoundaryPixels
+
+                % Get the column and row coordinates of the boundary pixel. 
+                % (double, 1 x 1)
+                c = boundaryPixels{i,obj.pVarNameColumn};
+                r = boundaryPixels{i,obj.pVarNameRow};
 
                 % Convert the indices on the 2D slice into indices in the 
                 % 3D volume based on the sagittal dimension number.
                 switch obj.pDimNumSagittal
-                    case 1; yidx = sliceIndex; xidx = m; zidx = n;
-                    case 2; yidx = m; xidx = sliceIndex; zidx = n;
-                    case 3; yidx = m; xidx = n; zidx = sliceIndex;
+                    case 1; yidx = sliceIndex; xidx = r; zidx = c;
+                    case 2; yidx = r; xidx = sliceIndex; zidx = c;
+                    case 3; yidx = r; xidx = c; zidx = sliceIndex;
                 end
 
                 % Store the intensity of the boundary pixel.
@@ -1247,75 +1436,159 @@ classdef CerebellumFlatmap < handle
 
         end
 
-        function values = replaceValuesWithBackground(obj,values,labels,labelsToRemove)
+        function flatmap = createFlatmapCoordinate(obj,labelIdsToRemove)
 
-            % Get the indices of values in the location corresponding to 
-            % the labels that user wants to remove. (logical, numLabels x 1)
-            idxsToReplace = arrayfun(@(x)any(x == labelsToRemove),labels);
+            % Initialize a flatmap. (uint8, M x numValidSlices x 2)
+            flatmap = obj.initFlatmap("uint8",2);
 
-            % Replace the values with the background value.
-            values(idxsToReplace,:,:) = obj.pLabelBackground;
+            for i = 1:obj.pNumSagittalSlices
+
+                % Get the boundary pixels on the sagittal slice.
+                % (table, numBoundaryPixels x 4) or []
+                boundaryPixels = obj.pBoundaryPixelsCell{i};
+
+                if isempty(boundaryPixels)
+                    continue;
+                end
+
+                % Get the row and column coordinates of each boundary point
+                % on the sagittal slice. (double, numBoundaryPixels x 1 x RC)
+                valuesToInsert = obj.getValuesCoordinate(boundaryPixels);
+
+                % Replace the values of pixels with the label ID to be 
+                % removed with the background label ID.
+                valuesToInsert = obj.replaceValuesWithBackground( ...
+                    valuesToInsert, ...
+                    boundaryPixels, ...
+                    labelIdsToRemove ...
+                );
+
+                % Insert the values to the flatmap.
+                % (uint8, M x numValidSlices x RC)
+                flatmap = obj.insertValuesToFlatmap( ...
+                    flatmap, ...
+                    boundaryPixels, ...
+                    valuesToInsert, ...
+                    i ...
+                );
+            
+            end
 
         end
 
-        function flatmap = insertLabelsToFlatmap(obj, ...
+        function values = getValuesCoordinate(obj,boundaryPixels)
+
+            % Get the row and column coordinates of the boundary pixels on
+            % the sagittal slice. (double, numBoundaryPixels x RC)
+            coordinates = boundaryPixels{:,[obj.pVarNameRow,obj.pVarNameColumn]};
+
+            % Rearrange the dimensions. (double, numBoundaryPixels x 1 x RC)
+            values = permute(coordinates,[1,3,2]);
+
+        end
+
+        function flatmap = initFlatmap(obj,precision,numChannels)
+
+            % Calculate the height of the flatmap.
+            flatmapHeight = obj.pFlatmapHeightTop + obj.pFlatmapHeightBottom;
+
+            % Initialize a flatmap. (numeric, M x numValidSlices x numChannels)
+            flatmap = zeros( ...
+                [flatmapHeight,obj.pNumValidSlices,numChannels], ...
+                precision ...
+            );
+
+        end
+
+        function values = replaceValuesWithBackground(obj, ...
+                values, ...
+                boundaryPixels, ...
+                labelIdsToRemove ...
+            )
+
+            if isempty(labelIdsToRemove)
+                return;
+            end
+
+            % Get the indices of the pixels with the label ID to be removed.
+            % (logical, numBoundaryPixels x 1)
+            idxsToReplace = arrayfun( ...
+                @(x)any(x == labelIdsToRemove), ...
+                boundaryPixels.(obj.pVarNameLabelId) ...
+            );
+
+            % Replace the values with the background label ID.
+            values(idxsToReplace,:,:) = obj.pLabelIdBackground;
+
+        end
+
+        function flatmap = insertValuesToFlatmap(obj, ...
                 flatmap, ...
-                labels, ...
+                boundaryPixels, ...
+                valuesToInsert, ...
                 sliceIndex ...
             )
 
-            % Get the indices of boundary pixels of an object on a flatmap.
+            % Get the offset of each boundary pixel from the origin point
+            % on the flatmap. (double, numBoundaryPixels x 1)
+            offset = boundaryPixels.(obj.pVarNameOffset);
+
+            % Calculate the coordinates (m: vertical axis, n: horizontal
+            % axis) on the flatmap for each boundary pixel.
+            [n,ms] = obj.calcCoordinatesOnFlatmap(offset,sliceIndex);
+
+            % Insert the values into the flatmap.
+            flatmap(ms,n,:) = valuesToInsert;
+
+        end
+
+        function [n,ms] = calcCoordinatesOnFlatmap(obj,offset,sliceIndex)
+
+            % Calculate the vertical axis coordinates on the flatmap for
+            % each boundary pixel based on their offset. 
             % (double, numBoundaryPixels x 1)
-            indicesOnFlatmap = obj.getIndicesOnFlatmap(sliceIndex);
+            ms = offset + obj.pFlatmapHeightBottom + 1;
 
-            % Convert the indices of boundary pixels and slice index to xy
-            % coordinates on the flatmap.
-            [x,ys] = obj.covertIndexToCoordOnFlatmap(indicesOnFlatmap,sliceIndex);
-
-            % Insert the labels into the flatmap.
-            flatmap(ys,x,:) = labels;
+            % Calculate the horizontal axis coordinates on the flatmap
+            % based on the sagittal slice index. (double, 1 x 1)
+            n = sliceIndex - obj.pIndexValidSliceStart + 1;
 
         end
 
-        function [x,ys] = covertIndexToCoordOnFlatmap(obj,pixelIndices,sliceIndex)
+        % Show flatmaps.
 
-            % Convert the indices of pixels to y coordinates on the flatmap.
-            % (double, numPixels x 1)
-            ys = pixelIndices + obj.pFlatmapHeightTop + 1;
-
-            % Convert the slice index to x coordinate on the flatmap.
-            x = sliceIndex - obj.pIndexValidSliceStart + 1;
-
-        end
-
-        function hFig = createFigure(obj,image,aspectRatioX,options)
+        function hFig = showFlatmap(obj,flatmap,aspectRatioX,options)
 
             arguments
-                obj
-                image
-                aspectRatioX
-                options.colorMap    {} = []
-                options.colorLabels {} = []
+                obj {}
+                flatmap {}
+                aspectRatioX {}
+                options.colorMap {} = []
             end
 
-            colorMap    = options.colorMap;
-            colorLabels = options.colorLabels;
+            colorMap = options.colorMap;
 
             hFig = figure("Visible","off");
 
-            % Show the flatmap.
             if isempty(colorMap)
 
-                imshow(image);
+                % Show the flatmap without a colormap.
+                imshow(flatmap);
 
             else
 
-                imshow(image,colorMap);
+                % Get the label colors and names.
+                % (uint8, numLabels x RGB), (string, numLabels x 1)
+                labelColors = colorMap.(obj.pVarNameColor);
+                labelNames  = colorMap.(obj.pVarNameLabelName);
+
+                % Show the flatmap with the colormap.
+                imshow(flatmap,labelColors);
                 colorbar( ...
                     "Direction","reverse", ...
-                    "TickLabels",colorLabels, ...
+                    "TickLabels",labelNames, ...
                     "TickLabelInterpreter","none", ...
-                    "Ticks",(0:numel(colorLabels))+0.5 ...
+                    "Ticks",(0:numel(labelNames))+0.5 ...
                 );
 
             end            
@@ -1337,101 +1610,116 @@ classdef CerebellumFlatmap < handle
             );
 
             % Set the x and y label.
-            xlabel("Index of Sagittal Plane Slices");
-            ylabel('Perimeter of Cerebellar Surface');
+            xlabel("Sagittal Plane Index");
+            ylabel("Boundary Pixel Position");
 
             hFig.Visible = "on";
             drawnow;
 
         end
 
-        % Mapping points.        
+        % Map points.        
 
-        function [boundaryMask,regionMask] = createBoundaryMask(obj)
+        function [binMask3dBoundary,binMask3dInterior] = createBinaryMasks3d(obj)
+            %
+            % Create 3D binary masks for the boundary and interior of the 
+            % object within the label volume data.
+            %
 
-            % Initialize binary masks for boundary voxels and the enclosed
-            % region. (logical, Y x X x Z)
-            boundaryMask = obj.createMaskVolume();
-            regionMask   = obj.createMaskVolume();
+            % Initialize 3D binary masks. (logical, Y x X x Z)
+            binMask3dBoundary = obj.initBinaryMask3d();
+            binMask3dInterior = obj.initBinaryMask3d();
 
+            % Get the size (rows and columns) of sagittal slices.
             switch obj.pDimNumSagittal
-                case 1; lengM = obj.pLengX; lengN = obj.pLengZ;
-                case 2; lengM = obj.pLengY; lengN = obj.pLengZ;
-                case 3; lengM = obj.pLengY; lengN = obj.pLengX;
+                case 1; rows = obj.pLenX; columns = obj.pLenZ;
+                case 2; rows = obj.pLenY; columns = obj.pLenZ;
+                case 3; rows = obj.pLenY; columns = obj.pLenX;
             end
 
-            % Initialize a binary mask for a sagittal slice. (logical, M x N)
-            binMaskSlice = false(lengM,lengN);
-
-            % Prepare all indices of y, x, and z.
-            yidx = 1:obj.pLengY;
-            xidx = 1:obj.pLengX;
-            zidx = 1:obj.pLengZ;    
+            % Initialize a binary mask for a sagittal slice. (logical, R x C)
+            binMask2d = false(rows,columns);
 
             for i = 1:obj.pNumSagittalSlices
 
-                boundaryMaskSlice = binMaskSlice;
+                % Get the boundary pixels on the sagittal slice.
+                % (table, numBoundaryPixels x 4) or []
+                boundaryPixels = obj.pBoundaryPixelsCell{i};
 
-                % Get the coordinates of boundary pixels of an object on
-                % the sagittal slice. (double, numBoundaryPixels x MN)
-                boundary = obj.getBoundary(i);
-
-                if size(boundary,1) == 0
+                if isempty(boundaryPixels)
                     continue;
                 end
 
-                % Convert the mn coordinates to linear indices.
+                % Get linear indices of each boundary pixel.
                 % (double, numBoundaryPixels x 1)
                 idxsBoundary = sub2ind( ...
-                    [lengM,lengN], ...
-                    boundary(:,1),boundary(:,2) ...
+                    [rows,columns], ...
+                    boundaryPixels.(obj.pVarNameRow), ...
+                    boundaryPixels.(obj.pVarNameColumn) ...
                 );
 
+                binMask2dBoundary = binMask2d;
+
                 % Assign True to the boundary pixels.
-                boundaryMaskSlice(idxsBoundary) = true;                
+                binMask2dBoundary(idxsBoundary) = true;                
 
-                % Overwrite the index based on the dimension number of
-                % sagittal planes.
-                switch obj.pDimNumSagittal
-                    case 1; yidx = i;
-                    case 2; xidx = i;
-                    case 3; zidx = i;
-                end
+                % Get the index within the label volume data for the
+                % sagittal slice.
+                [idxsY,idxsX,idxsZ] = obj.getSagittalSliceIndices(i);
 
-                % Insert the bounday mask slice to the volume.
-                boundaryMask(yidx,xidx,zidx) = boundaryMaskSlice;
+                % Insert the 2D binary mask into the 3D binary mask.
+                binMask3dBoundary(idxsY,idxsX,idxsZ) = binMask2dBoundary;
 
-                % Fill the enclosed region.
-                boundaryMaskSlice = imfill(boundaryMaskSlice,'holes');
+                % Fill the region inside the boundary.
+                binMask2dBoundary = imfill(binMask2dBoundary,'holes');
 
-                % Insert the region mask slice to the volume.
-                regionMask(yidx,xidx,zidx) = boundaryMaskSlice;
+                % Insert the 2D binary mask into the 3D binary mask.
+                binMask3dInterior(idxsY,idxsX,idxsZ) = binMask2dBoundary;
 
             end
 
         end
 
-        function [yn,xn,zn] = findNearestBoundaryVoxel(obj,boundaryMask,x,y,z)
+        function binaryMask3d = initBinaryMask3d(obj)
+
+            % Create a 3D binary mask of the same size as the label volume 
+            % data. (logical, Y x X x Z)
+            binaryMask3d = false(obj.getLabelVolumeSize());
+
+        end
+
+        function size = getLabelVolumeSize(obj)
+
+            % Return the size of the label volume. (double, 1 x 3)
+            size = [obj.pLenY,obj.pLenX,obj.pLenZ];
+
+        end
+
+        function [yn,xn,zn] = findNearestBoundaryVoxel(obj,binMask3dBoundary,x,y,z)
 
             % Get linear indices of boundary voxels in the neighborhood
             % of the specified point. (double, numBoundaryVoxels x 1)
-            idxsBoundaryNeighbor = obj.findNeighborBoundaryVoxels( ...
-                boundaryMask, ...
+            idxsBoundaryVoxelsNeighbor = obj.findNeighborBoundaryVoxels( ...
+                binMask3dBoundary, ...
                 x,y,z ...
             );        
 
             % Number of neighbor boundary voxels.
-            numBoundaryVoxels = numel(idxsBoundaryNeighbor);
+            numBoundaryVoxels = numel(idxsBoundaryVoxelsNeighbor);
         
             % Initialize an array to store squared distances from the 
-            % source point to each boundary voxel. (double, numBoundaryVoxels x 1)
+            % source point to each boundary voxel.
+            % (double, numBoundaryVoxels x 1)
             distSquared = zeros(numBoundaryVoxels,1);
         
             for i = 1:numBoundaryVoxels
         
                 % Convert the linear index of the current boundary voxel to
                 % xyz coordinates.
-                [yb,xb,zb] = ind2sub(obj.getVolumeSize(),idxsBoundaryNeighbor(i));
+                [yb,xb,zb] = ind2sub( ...
+                    obj.getLabelVolumeSize(), ...
+                    idxsBoundaryVoxelsNeighbor(i) ...
+                );
         
                 % Calculate the distance between the two points.
                 distSquared(i) = (x-xb)^2 + (y-yb)^2 + (z-zb)^2;
@@ -1442,15 +1730,15 @@ classdef CerebellumFlatmap < handle
             [~,idxMin] = min(distSquared);
         
             % Linear index of the nearest boundary voxel.
-            idxBoundaryNearest = idxsBoundaryNeighbor(idxMin);
+            idxBoundaryVoxelNearest = idxsBoundaryVoxelsNeighbor(idxMin);
             
             % Convert the linear index to xyz coordinates in the volume.
-            [yn,xn,zn] = ind2sub(obj.getVolumeSize(),idxBoundaryNearest);
+            [yn,xn,zn] = ind2sub(obj.getLabelVolumeSize(),idxBoundaryVoxelNearest);
 
         end
 
-        function idxsBoundaryInSphere = findNeighborBoundaryVoxels(obj, ...
-                boundaryMask, ...
+        function idxsBoundaryVoxelsNeighbor = findNeighborBoundaryVoxels(obj, ...
+                binMask3dBoundary, ...
                 x,y,z ...
             )
             %
@@ -1458,6 +1746,7 @@ classdef CerebellumFlatmap < handle
             % incrementing the searching radius.
             %
 
+            % Initialize a serching radius.
             radiusCurrent = obj.pRadiusInit;
         
             while true
@@ -1468,15 +1757,18 @@ classdef CerebellumFlatmap < handle
 
                 % Create a mask of the sphere centered at the specified
                 % point. (logical, Y x X x Z)
-                sphereMask = obj.createShpereMask(xyzInUnitSphere,x,y,z);
+                binaryMask3dSphere = obj.createBinaryMasks3dShpere( ...
+                    xyzInUnitSphere, ...
+                    x,y,z ...
+                );
             
                 % Get logical indices of boundary voxels inside the sphere.
                 % (logical, Y x X x Z)
-                boundaryInSphere = boundaryMask & sphereMask;
-
-%                 volshow(boundaryMask | sphereMask);
+                binMask3dBoundaryInSphere = binMask3dBoundary & binaryMask3dSphere;
                     
-                if sum(boundaryInSphere,'all') ~= 0
+                % Complete the search if any boundary voxel is found within
+                % the sphere.
+                if sum(binMask3dBoundaryInSphere,"all") ~= 0
                     break;
                 end
         
@@ -1487,13 +1779,13 @@ classdef CerebellumFlatmap < handle
         
             % Get linear indices of the boundary voxels inside the sphere.
             % (double, numBoundaryVoxels x 1)
-            idxsBoundaryInSphere = find(boundaryInSphere);
+            idxsBoundaryVoxelsNeighbor = find(binMask3dBoundaryInSphere);
 
         end
 
         function xyz = getCoordinatesInUnitSphere(obj,radius)
             %
-            % Return the coordinate of voxels inside a sphere of the 
+            % Return the coordinates of voxels inside a sphere of the 
             % radius, centered at (x,y,z) = (0,0,0).
             %
             % <Output>
@@ -1508,11 +1800,11 @@ classdef CerebellumFlatmap < handle
 
             if isempty(obj.pCoordInUnitSphereTable)
 
-                % Calculate coordinate of voxels inside a sphere of the 
-                % radius, centered at (x,y,z) = (0,0,0).
+                % Calculate the coordinates of voxels inside a sphere of
+                % the radius, centered at (x,y,z) = (0,0,0).
                 xyz = obj.calcCoordinatesInSphere(radius);
 
-                % Initialize a table and store the coordinates for the 
+                % Initialize a table to store the coordinates for the 
                 % radius. (table, numRadius x 2)
                 obj.pCoordInUnitSphereTable = table( ...
                     radius,{xyz}, ...
@@ -1544,8 +1836,8 @@ classdef CerebellumFlatmap < handle
 
         function xyz = calcCoordinatesInSphere(obj,radius)
             %
-            % Return coordinate of voxels inside a sphere with a specified
-            % radius, centered at (x,y,z) = (0,0,0).
+            % Return the coordinates of voxels inside a sphere with a
+            % specified radius, centered at (x,y,z) = (0,0,0).
             %
         
             % Define the size of the cube that encloses the sphere and the 
@@ -1591,13 +1883,13 @@ classdef CerebellumFlatmap < handle
 
         end
 
-        function sphereMask = createShpereMask(obj, ...
+        function binaryMask3dSphere = createBinaryMasks3dShpere(obj, ...
                 xyzInUnitSphere, ...
                 xCenter,yCenter,zCenter ...
             )
 
             % Initialize the output mask. (logical, Y x X x Z)
-            sphereMask = obj.createMaskVolume();            
+            binaryMask3dSphere = obj.initBinaryMask3d();            
     
             % Shift all coordinates inside the unit sphere so that the 
             % center of the sphere is located at the specified point.
@@ -1607,9 +1899,9 @@ classdef CerebellumFlatmap < handle
     
             % Get logical indices of voxels inside the sphere that locate 
             % outside the cuboid.
-            idxOutOfCuboid = x < 1 | x > obj.pLengX | ...
-                             y < 1 | y > obj.pLengY | ...
-                             z < 1 | z > obj.pLengZ;
+            idxOutOfCuboid = x < 1 | x > obj.pLenX | ...
+                             y < 1 | y > obj.pLenY | ...
+                             z < 1 | z > obj.pLenZ;
     
             % Remove the voxels outside the cuboid.
             x = x(~idxOutOfCuboid);
@@ -1617,122 +1909,23 @@ classdef CerebellumFlatmap < handle
             z = z(~idxOutOfCuboid);
 
             % Convert the voxel indices to linear indices in the volume.
-            idxs = sub2ind(obj.getVolumeSize(),y,x,z);   
+            idxs = sub2ind(obj.getLabelVolumeSize(),y,x,z);   
         
             % Assign True to the voxels inside the sphere.
-            sphereMask(idxs) = true;        
+            binaryMask3dSphere(idxs) = true;        
 
-        end
+        end   
 
-        function binMaskVolume = createMaskVolume(obj)
+        % Print messages.
 
-            % Create a volume of binary mask. (logical, Y x X x Z)
-            binMaskVolume = false(obj.getVolumeSize());
-
-        end
-
-        function size = getVolumeSize(obj)
-
-            % Return the size of the volume. (double, 1 x 3)
-            size = [obj.pLengY,obj.pLengX,obj.pLengZ];
-
-        end
-
-        % Get parsed boundary data.
-
-        function boundaryData = getBoundaryData(obj,sliceIndex)
-
-            % Get the boundary data of an object on the sagittal slice.
-            % (double, numBoundaryPixels x 4) or []
-            boundaryData = obj.pBoundaryDataCell{sliceIndex};
-        
-            % NOTE:
-            % 1st column: y coordinates on the sagittal slice.
-            % 2nd column: x coordinates on the sagittal slice.
-            % 3rd column: labels (indices) of brain regions.
-            % 4th coulmn: indices on the flat map.
-
-        end
-
-        function labels = getLabels(obj,sliceIndex)
-
-            labels = [];
-
-            % Get the boundary data of an object on the sagittal slice.
-            % (double, numBoundaryPixels x 4) or []
-            boundaryData = obj.getBoundaryData(sliceIndex);
-
-            if isempty(boundaryData)
-                return;
-            end
-
-            % Get the labels of the boundary pixels.
-            % (double, numBoundaryPixels x 1)
-            labels = boundaryData(:,3);
-
-        end
-
-        function boundary = getBoundary(obj,sliceIndex)
-
-            boundary = [];
-
-            % Get the boundary data of an object on the sagittal slice.
-            % (double, numBoundaryPixels x 4) or []
-            boundaryData = obj.getBoundaryData(sliceIndex);
-
-            if isempty(boundaryData)
-                return;
-            end
-
-            % Get the coordinates of the boundary pixels.
-            % (double, numBoundaryPixels x MN)
-            boundary = boundaryData(:,1:2);
-
-            % NOTE:
-            % MN: The row and column on the sagittal slice.
-
-        end
-
-        function indicesOnFlatmap = getIndicesOnFlatmap(obj,sliceIndex)
-
-            indicesOnFlatmap = [];
-
-            % Get the boundary data of an object on the sagittal slice.
-            % (double, numBoundaryPixels x 4) or []
-            boundaryData = obj.getBoundaryData(sliceIndex);
-
-            if isempty(boundaryData)
-                return;
-            end
-
-            % Get the indices of the boundary pixels on a flatmap.
-            % (double, numBoundaryPixels x 1)
-            indicesOnFlatmap = boundaryData(:,4);
-
-        end        
-
-        % Printing messages.
-        
-        function printSliceSkipped(obj,verbose)
-
-            if ~verbose
-                return;
-            end
-            
-            fprintf("    Skipped due to no object with incision and origin point.\n");
-
-        end
-
-        function printObjectSkipped(obj,labels,verbose)
+        function printMsg(~,verbose,format,varargin)
 
             if ~verbose
                 return;
             end
 
-            fprintf( ...
-                "Skipped due to no incision or origin point. (labels: %s)\n", ...
-                strJoinMatComma(double(unique(labels)')) ...
-            );
+            % Print the message.
+            fprintf(format,varargin{:});
 
         end
 
@@ -1740,7 +1933,7 @@ classdef CerebellumFlatmap < handle
 
         function validateParsingDone(obj)
 
-            if isempty(obj.pBoundaryDataCell)
+            if isempty(obj.pBoundaryPixelsCell)
                 error("Run parse() first.");
             end
 
@@ -1769,15 +1962,15 @@ classdef CerebellumFlatmap < handle
             xyzSource = round(xyzSource);
 
             % Validate the indices are within the volume data.
-            if max(xyzSource(:,1)) > obj.pLengX || ...
-               max(xyzSource(:,2)) > obj.pLengY || ...
-               max(xyzSource(:,3)) > obj.pLengZ
+            if max(xyzSource(:,1)) > obj.pLenX || ...
+               max(xyzSource(:,2)) > obj.pLenY || ...
+               max(xyzSource(:,3)) > obj.pLenZ
                 error( ...
                     "The x, y, z coordinates of source points must be less " + ...
                     "than %.1f, %.1f, %.1f, respectively.", ...
-                    obj.pLengX + 0.5, ...
-                    obj.pLengY + 0.5, ...
-                    obj.pLengZ + 0.5 ...
+                    obj.pLenX + 0.5, ...
+                    obj.pLenY + 0.5, ...
+                    obj.pLenZ + 0.5 ...
                 );
             end
 
@@ -1791,11 +1984,11 @@ classdef CerebellumFlatmap < handle
 
         end
 
-        function validateLabelsToRemove(obj,labelsToRemove)
+        function validateLabelsToRemove(obj,labelIdsToRemove)
 
-            % Validate the labels to be removed.
-            if ~isempty(labelsToRemove)
-                mustBePosInteger(labelsToRemove);
+            % Validate the label IDs to be removed.
+            if ~isempty(labelIdsToRemove)
+                mustBePosInteger(labelIdsToRemove);
             end
 
         end

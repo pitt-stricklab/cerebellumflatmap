@@ -3,9 +3,9 @@ function validateFileExt(paths,validExts)
 % Validate file extensions in case-insensitive.
 %
 % <Input>
-%   paths: (char) (cell of chars, M x N) (string, M x N)
+%   paths: (text, M x N)
 %       File paths to be validated.
-%   validExts: (char) (cell of chars, M x N) (string, M x N)
+%   validExts: (text, M x N)
 %       Valid file extensions with a dot. Ex. {'.jp2','.tif'}
 
 % HISTORY:
