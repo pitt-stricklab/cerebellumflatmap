@@ -243,7 +243,7 @@ nmTarget = hCerebellumFlatmap.mapPoints(xyzSource);
 plotSizeTarget = 20;
 
 % Color name for the mapped points. (text, 1 x 1)
-colorNameTarget = "green";
+colorNameTarget = "red";
 
 % Get the Axes handle of the figure.
 figure(hFig1);
