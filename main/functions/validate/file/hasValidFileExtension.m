@@ -7,9 +7,9 @@ function tf = hasValidFileExtension(fileName,validExts)
 %   FUN_NAME(INPUT1,INPUT2)
 %   
 % <Input>
-%   fileName: (scalar text)
+%   fileName: (text, 1 x 1)
 %       A file name that has file extension.
-%   validExts: (char) (cell of char, M x N) (string, M x N)
+%   validExts: (text, M x N)
 %       Valid file extensions with a dot. Ex. {'.txt','.jpg'}
 %   
 % <Output>
@@ -27,7 +27,7 @@ function tf = hasValidFileExtension(fileName,validExts)
 mustBeTextScalar_alt(fileName);
 mustBeText_alt(validExts);
 
-% Get file extension of the file. (char) (string, 1 x 1)
+% Get file extension of the file. (char, 1 x N) or (string, 1 x 1)
 [~,~,ext] = fileparts(fileName);
 
 % Check if the file extension is one of valid extensions.

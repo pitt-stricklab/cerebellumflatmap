@@ -6,10 +6,8 @@ function text = strJoinComma(text)
 %   FUN_NAME(INPUT1,INPUT2)
 %   
 % <Input>
-%   text: (char, 1 x N) (cell of char, M x N) (string, M x N)
+%   text: (text, M x N)
 %       EXPLANATION_FOR_INPUT1.
-%   INPUT2: (CLASS, HEIGHT x WIDTH)
-%       EXPLANATION_FOR_INPUT2.
 %   
 % <Output>
 %   text: (string, 1 x 1)
@@ -17,16 +15,17 @@ function text = strJoinComma(text)
 %   
 
 % HISTORY:
-%   1.0 - YYYYMMDD Mitsu Written
-%   
+%   1.0 - YYYYMMDD Written by Mitsu
+%   1.2 - 20240116 Bug fix: When the input is a char row vector, strjoin()
+%                  returned an error.
 
-% Create a comma joined text. (char, 1 x N) (string, 1 x 1)
-text = strjoin(text,', ');
+% Validate the input.
+mustBeText(text);
 
-% NOTE:
-% If the input text is a char row vector, returns as it was.
-
-% Convert it to a string. (string, 1 x 1)
+% Convert it to a string. (string, M x M)
 text = string(text);
+
+% Create a comma joined text. (string, 1 x 1)
+text = strjoin(text,', ');
 
 end

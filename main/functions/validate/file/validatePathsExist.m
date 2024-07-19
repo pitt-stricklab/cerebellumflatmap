@@ -13,6 +13,7 @@ function validatePathsExist(paths)
 %                  compatible to MATLAB R2020a or older.
 %   2.0 - 20230415 Don't need to specify 'file' or 'folder' and allow a
 %                  mixed array of files and folders.
+%   2.1 - 20240111 Bug fix when evaluating all(): all(tf) to all(tf,'all').
 
 %------------------%
 
@@ -23,7 +24,7 @@ mustBeText(paths);
 tf = isfile(paths) | isfolder(paths);
 
 % Return if all paths exist.
-if all(tf)
+if all(tf,'all')
     return;
 end
 
