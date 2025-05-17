@@ -1,4 +1,6 @@
 # CerebellumFlatmap
+* main\CerebellumFlatmap.m
+  
 A class for creating a flatmap from the cerebellar volumetric data using the following method.
 1. Extract the boundary pixels of the cerebellum from each sagittal slice. 
 2. Cut open the boundary line at the pre-defined incision point.
@@ -120,8 +122,7 @@ hFig1 = hCerebellumFlatmap.showLabelFlatmap( ...
 
 ```
 
-![fig1](https://github.com/user-attachments/assets/385de5e7-dc39-4b7b-ac19-577f765d6160)
-
+![fig1](https://github.com/user-attachments/assets/baa4e18a-b524-4092-b536-6a18f990c28d)
 
 ## Create a border flatmap.
 
@@ -140,7 +141,7 @@ hFig2 = hCerebellumFlatmap.showBorderFlatmap( ...
 
 ```
 
-![fig2](https://github.com/user-attachments/assets/6bd2dca2-5c73-4059-bd3e-94c5635426a2)
+![fig2](https://github.com/user-attachments/assets/fd2cf5e1-e493-4f11-99be-c18294b385da)
 
 
 ## Create a curvature flatmap.
@@ -162,7 +163,7 @@ hFig3 = hCerebellumFlatmap.showCurvatureFlatmap( ...
 
 ```
 
-![fig3](https://github.com/user-attachments/assets/4e05441b-fa7b-4555-8070-1ecc606457f5)
+![fig3](https://github.com/user-attachments/assets/12ce864c-c423-4106-9cdf-1031472e532b)
 
 
 ## Create an intensity flatmap.
@@ -198,7 +199,7 @@ colorbar;
 
 ```
 
-![fig4](https://github.com/user-attachments/assets/b2524815-4179-4dad-8710-552fff3bfebc)
+![fig4](https://github.com/user-attachments/assets/96fb9939-bb4a-443b-95e6-c16722456a3e)
 
 
 ## Create a coordinate flatmap.
@@ -276,4 +277,4 @@ hold off
 
 ```
 
-![fig5](https://github.com/user-attachments/assets/05903ea4-fc69-4959-98cd-217f91445cd3)
+![fig5](https://github.com/user-attachments/assets/741b48b2-cd5e-4e4b-90ff-c81582d89422)
