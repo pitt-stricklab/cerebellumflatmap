@@ -19,14 +19,14 @@ function outTable = initTable(variableNames,height,variableTypes)
 %                  Allow char variable name input.
 
 arguments
-    variableNames {mustBeTextVector}
-    height        {mustBeNonNegIntegerScalar}
+    variableNames {Validator.mustBeTextVector}
+    height        {Validator.mustBeNonNegIntegerScalar}
     variableTypes {} = []
 end
 
 % Validate variableTypes.
 if ~isempty(variableTypes)
-    mustBeTextVector(variableTypes);
+    Validator.mustBeTextVector(variableTypes);
 end
 
 % Convert variable names and types to string. (string, 1 x N)

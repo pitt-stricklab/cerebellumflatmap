@@ -3,7 +3,8 @@ function data = convertToRowString(data)
 % Convert data to a string row vector.
 %
 % <Input>
-%   data: acceptable classes for string(). (M x N)
+%   data: (XXX, M x N)
+%       Acceptable classes for string().
 %
 % <Output>
 %   data: (string, 1 x N)
@@ -27,6 +28,6 @@ function data = convertToRowString(data)
 data = string(data);
 
 % Convert to a row vector. (string, 1 x N)
-data = reshape(data,1,[]);
+data = convertToRow(data);
 
 end
