@@ -108,8 +108,8 @@ classdef MatlabColor < handle
             %
             
             % Validate the inputs.
-            mustBePosIntegerScalar(id);
-            mustBeTextScalar(type);            
+            Validator.mustBePosIntegerScalar(id);
+            Validator.mustBeTextScalar(type);
 
             % Validate the type. (string, 1 x 1)
             type = validatestring(type, ...
@@ -157,7 +157,7 @@ classdef MatlabColor < handle
             %
 
             % Validate the color names.
-            mustBeText(colorNames);
+            Validator.mustBeText(colorNames);
             
             % Convert to strings. (string, M x N)
             colorNames = string(colorNames);
@@ -189,7 +189,7 @@ classdef MatlabColor < handle
             %       A color name.
 
             % Validate the input.
-            mustBeTextScalar(colorName);
+            Validator.mustBeTextScalar(colorName);
             
             % Validate the color name. (string, 1 x 1)
             colorName = obj.validateColorNames(colorName);

@@ -20,7 +20,7 @@ function text = strJoinComma(text)
 %                  returned an error.
 
 % Validate the input.
-mustBeText(text);
+Validator.mustBeText(text);
 
 % Convert it to a string. (string, M x M)
 text = string(text);

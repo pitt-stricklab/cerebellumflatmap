@@ -33,11 +33,11 @@ function str = strJoinMat(mat,delimiter,newline,prefix,suffix)
 %
 
 arguments
-    mat       {mustBeA(mat,'double')}
-    delimiter {mustBeTextScalar}
-    newline   {mustBeTextScalar}
-    prefix    {mustBeTextScalar} = '' % Optional
-    suffix    {mustBeTextScalar} = '' % Optional
+    mat       {Validator.mustBeA(mat,"double")}
+    delimiter {Validator.mustBeTextScalar}
+    newline   {Validator.mustBeTextScalar}
+    prefix    {Validator.mustBeTextScalar} = '' % Optional
+    suffix    {Validator.mustBeTextScalar} = '' % Optional
 end
 
 % Covert input texts to char if it's scalar string.
