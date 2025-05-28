@@ -9,12 +9,18 @@ classdef CerebellumFlatmapGenerator < ClassVersion
     %                  b) Moved code for generating various flatmaps from
     %                     marmoset cerebellum label data out of
     %                     MarmosetCerebellumFlatmapTool.mlapp.
-    %
+    %   1.1 - 20250526 a) Renamed mapPointCloudToFlatmap() to
+    %                     mapWorldPointsToFlatmap(), and updated the output
+    %                     format.
+    %                  b) The curvature flatmap colormap was updated to use
+    %                     a gradient based on curvature magnitude, instead
+    %                     of three fixed colors for positive, negative, and
+    %                     zero values.
 
     properties (Constant)
 
         % Version of the class definition.
-        cClassVersion = 1.0; 
+        cClassVersion = 1.1;
 
         % Names of the flatmap types.
         cTypeNameLabel     = "label";
@@ -47,6 +53,10 @@ classdef CerebellumFlatmapGenerator < ClassVersion
         pColormapBorder
         pColormapCurvature
 
+        % World-space X sampling coordinates corresponding to each column
+        % of the final flatmap.
+        pWorldXCoordsPerColumn
+
     end
 
     properties (Access = private)
@@ -60,13 +70,11 @@ classdef CerebellumFlatmapGenerator < ClassVersion
         hFlatmapGeneratorFl
         hFlatmapGeneratorPFl       
 
-        % The index of the first sagittal slice where each region begins.
-        pIdxLeftMain
-        pIdxLeftFl
-        pIdxLeftPFl
-
-        % Dimension number of sagittal planes.
-        pDimNumSagittal = 1;
+        % Index of the first valid X-axis sampling point in world space
+        % where a target object exists on the sagittal slice.
+        pSampleIdxXFirstMain
+        pSampleIdxXFirstFl
+        pSampleIdxXFirstPFl           
 
         % Label IDs in the volume.
         pLabelIdWhiteMatter = 46;
@@ -75,34 +83,24 @@ classdef CerebellumFlatmapGenerator < ClassVersion
         pLabelIdOrigin      = 100; % Origin lines
 
         % Predefined label IDs.
-        pLabelIdBackground      = 0;
-        pLabelIdBorder          = 1;
-        pLabelIdInflectionPoint = 1;
-        pLabelIdConcave         = 2;
-        pLabelIdConvex          = 3;
+        pLabelIdBackground = 0;
+        pLabelIdBorder     = 1;
 
         % Predefined label names.
-        pLabelNameBackground      = "background";
-        pLabelNameBorder          = "border";
-        pLabelNameInflectionPoint = "inflection point";
-        pLabelNameConcave         = "concave";
-        pLabelNameConvex          = "convex";
+        pLabelNameBackground = "background";
+        pLabelNameBorder     = "border";
 
         % Predefined label colors.
         pLabelColorBackgroundLabel     = "black";
         pLabelColorBackgroundBorder    = "white";
-        pLabelColorBackgroundCurvature = "white";
         pLabelColorBackgroundIntensity = "black";
         pLabelColorBorder              = "black";
-        pLabelColorInflectionPoint     = "black";
-        pLabelColorConcave             = "blue";
-        pLabelColorConvex              = "red";
 
         % Label IDs not shown on the flatmap.
         pLabelIdsToRemove
 
-        % Resolution for the intensity flatmap colormap.
-        pIntensityResolution = 256;
+        % Resolution for colormaps.
+        pColormapResolution = 256;
 
         % Vertical padding added to the main flatmap to include the other
         % regions.
@@ -144,29 +142,37 @@ classdef CerebellumFlatmapGenerator < ClassVersion
                 labelVolumePathPFl ...
             );
 
-            % Create and store label, border, and curvature flatmaps.
-            % (uint8, M x numValidSlices)
+            % Create and store a label flatmap. (uint8, M x N)
             obj.pFlatmapLabel = obj.createFlatmap( ...
                 FlatmapGenerator.cMethodNameCreateLabelFlatmap ...
             );
+
+            % Create and store a border flatmap. (uint8, M x N)
             obj.pFlatmapBorder = obj.createFlatmap( ...
                 FlatmapGenerator.cMethodNameCreateBorderFlatmap ...
             );
+
+            % Create and store a curvature flatmap. (double, M x N)
             obj.pFlatmapCurvature = obj.createFlatmap( ...
                 FlatmapGenerator.cMethodNameCreateCurvatureFlatmap ...
             );
 
             % Create and store colormaps for label, border, and curvature
-            % flatmaps. (table, 1 x 3)
+            % flatmaps. (table, 1 x 3) or (numColors x RGB)
             obj.pColormapLabel     = obj.createLabelColormap(colorTablePath);
             obj.pColormapBorder    = obj.createBorderColormap();
-            obj.pColormapCurvature = obj.createCurvatureColormap();
-            
+            obj.pColormapCurvature = parula;
+
+            % Extract and store the world-space X sampling coordinates
+            % corresponding to each column of the final flatmap.
+            % (double, 1 x flatmapWidth)
+            obj.pWorldXCoordsPerColumn = obj.extractWorldXCoordsPerColumn();
+
         end
 
         function flatmap = createIntensityFlatmap(obj,intensityFilePath)
 
-            % Create the intensity flatmap. (double, M x numValidSlices)
+            % Create the intensity flatmap. (double, M x N)
             flatmap = obj.createFlatmap( ...
                 FlatmapGenerator.cMethodNameCreateIntensityFlatmap, ...
                 intensityFilePath ...
@@ -188,11 +194,16 @@ classdef CerebellumFlatmapGenerator < ClassVersion
 
         end
 
-        function nmTarget = mapPointCloudToFlatmap(obj,pointCloudFilePath)
+        function [flatRows,flatColumns] = mapWorldPointsToFlatmap(obj, ...
+                pointCloudFilePath ...
+            )
 
-            % Compute the coordinates of the point cloud on the flatmap.
-            % (double, numTargetPoints x NM) 
-            nmTarget = obj.computeCoordinatesOnFlatmap(pointCloudFilePath);
+            % Compute the row and column indices on the flatmap
+            % corresponding to the given point cloud in world space.
+            % (double, numQueryPoints x 1) 
+            [flatRows,flatColumns] = obj.calcRowAndColumnOnFlatmap( ...
+                pointCloudFilePath ...
+            );
 
         end
 
@@ -211,24 +222,19 @@ classdef CerebellumFlatmapGenerator < ClassVersion
             % Create and store FlatmapGenerator handles for the main part
             % of the cerebellum, flocculus (Fl), and paraflocculus (PFl).
             % (FlatmapGenerator, 1 x 1)
-            
-            obj.hFlatmapGeneratorMain = obj.createFlatmapGeneratorHandle( ...
-                labelVolumePathMain ...
-            );
+            obj.hFlatmapGeneratorMain = ...
+                obj.createFlatmapGeneratorHandle(labelVolumePathMain);
+            obj.hFlatmapGeneratorFl = ...
+                obj.createFlatmapGeneratorHandle(labelVolumePathFl);
+            obj.hFlatmapGeneratorPFl = ...
+                obj.createFlatmapGeneratorHandle(labelVolumePathPFl);
 
-            obj.hFlatmapGeneratorFl = obj.createFlatmapGeneratorHandle( ...
-                labelVolumePathFl ...
-            );
-
-            obj.hFlatmapGeneratorPFl = obj.createFlatmapGeneratorHandle( ...
-                labelVolumePathPFl ...
-            );
-
-            % Store the coordinate of the first valid sagittal slice
-            % (leftmost slice).
-            obj.pIdxLeftMain = obj.hFlatmapGeneratorMain.getIndexValidSliceStart();
-            obj.pIdxLeftFl   = obj.hFlatmapGeneratorFl.getIndexValidSliceStart();
-            obj.pIdxLeftPFl  = obj.hFlatmapGeneratorPFl.getIndexValidSliceStart();
+            % Store the index of the first valid X-axis sampling point in
+            % world space where a target object exists on the sagittal
+            % slice.
+            obj.pSampleIdxXFirstMain = obj.hFlatmapGeneratorMain.getSampleIdxXFirst();
+            obj.pSampleIdxXFirstFl   = obj.hFlatmapGeneratorFl.getSampleIdxXFirst();
+            obj.pSampleIdxXFirstPFl  = obj.hFlatmapGeneratorPFl.getSampleIdxXFirst();
 
         end
 
@@ -240,13 +246,10 @@ classdef CerebellumFlatmapGenerator < ClassVersion
             % (FlatmapGenerator, 1 x 1)
             hFlatmapGenerator = FlatmapGenerator( ...
                 labelVolumePath, ...
-                obj.pDimNumSagittal, ...
                 obj.pLabelIdIncision, ...
-                obj.pLabelIdOrigin ...
+                obj.pLabelIdOrigin, ...
+                false ...
             );
-
-            % Parse the volume data.
-            hFlatmapGenerator.parse(false);
 
         end
 
@@ -258,7 +261,7 @@ classdef CerebellumFlatmapGenerator < ClassVersion
             )
 
             % Create flatmaps for the main cerebellar region, flocculus,
-            % and paraflocculus. (numeric, M x numValidSlices)
+            % and paraflocculus. (numeric, M x N)
             [flatmapMain,flatmapFl,flatmapPFl] = obj.createFlatmaps( ...
                 methodNameCreateFlatmap, ...
                 varargin{:} ...
@@ -275,7 +278,7 @@ classdef CerebellumFlatmapGenerator < ClassVersion
             )
 
             % Create flatmaps for the main cerebellar region, flocculus,
-            % and paraflocculus. (numeric, M x numValidSlices) 
+            % and paraflocculus. (numeric, M x N) 
 
             flatmapMain = obj.hFlatmapGeneratorMain.(methodNameCreateFlatmap)( ...
                 varargin{:}, ...
@@ -296,62 +299,103 @@ classdef CerebellumFlatmapGenerator < ClassVersion
 
         function flatmap = combineFlatmaps(obj,flatmapMain,flatmapFl,flatmapPFl)
 
-            % Initialize the size of the final flatmap using the maximum
-            % height and width among all flatmaps. (numeric, M x N)
-            flatmap = zeros( ...
-                [ ...
-                    size(flatmapMain,1)+obj.pVerticalPadding, ...
-                    size(flatmapPFl,2), ...
-                    1 ...
-                ], ...
-                class(flatmapMain) ...
-            );
+            % Determine the final flatmap size using the maximum height and
+            % width among all flatmaps.
+            flatmapSize = [ ...
+                size(flatmapMain,1)+obj.pVerticalPadding, ...
+                size(flatmapPFl,2), ...
+                1 ...
+            ];
+
+            % Check whether each flatmap contains any NaN values.
+            % (logical, M x N)
+            isNanMain = isnan(flatmapMain);
+            isNanFl   = isnan(flatmapFl);
+            isNanPFl  = isnan(flatmapPFl);
+
+            if any(isNanMain,"all") || any(isNanFl,"all") || any(isNanPFl,"all")
+
+                % Initialize the flatmap as a double array filled with NaNs.
+                % (double, M x N)
+                flatmap = nan(flatmapSize);
+
+            else
+
+                % Initialize the flatmap while preserving the original data
+                % type (class). (numeric, M x N)
+                flatmap = zeros(flatmapSize,class(flatmapMain));
+
+            end
 
             % Insert the flatmap of the main region, flocculus, and
             % paraflocculus into the final flatmap.
 
             flatmap = obj.insertSubFlatmaps(flatmap, ...
                 flatmapMain, ...
-                obj.pIdxLeftMain, ...
+                isNanMain, ...
+                obj.pSampleIdxXFirstMain, ...
                 0 ...
             );
 
             flatmap = obj.insertSubFlatmaps(flatmap, ...
                 flatmapFl, ...
-                obj.pIdxLeftFl, ...
+                isNanFl, ...
+                obj.pSampleIdxXFirstFl, ...
                 obj.pVerticalOffsetFl ...
             );
 
             flatmap = obj.insertSubFlatmaps(flatmap, ...
                 flatmapPFl, ...
-                obj.pIdxLeftPFl, ...
+                isNanPFl, ...
+                obj.pSampleIdxXFirstPFl, ...
                 obj.pVerticalOffsetPFl ...
             );
 
         end
 
-        function flatmap = insertSubFlatmaps(obj,flatmap, ...
-                flatmapToInsert, ...
-                idxLeft, ...
+        function flatmapBase = insertSubFlatmaps(obj,flatmapBase, ...
+                flatmapInsert, ...
+                isNanInsert, ...
+                sampleIdxXFirst, ...
                 verticalOffset ...
             )
 
-            idxToInsertLeft  = obj.shiftSagittalIndex(idxLeft);
-            idxToInsertRight = idxToInsertLeft+size(flatmapToInsert,2)-1;
+            colToInsertLeft  = obj.calcColumnOnFlatmap(sampleIdxXFirst);
+            colToInsertRight = colToInsertLeft+size(flatmapInsert,2)-1;
 
-            idxsToInsertVert = (1:size(flatmapToInsert,1))+verticalOffset;
-            idxsToInsertHori = idxToInsertLeft:idxToInsertRight;
+            rowsToInsert = (1:size(flatmapInsert,1))+verticalOffset;
+            colsToInsert = colToInsertLeft:colToInsertRight;
 
-            flatmap(idxsToInsertVert,idxsToInsertHori) = ...
-            flatmap(idxsToInsertVert,idxsToInsertHori) + flatmapToInsert;
+            % Extract the target insertion region from the base flatmap.
+            % (numeric, M x N)
+            targetRegion = flatmapBase(rowsToInsert,colsToInsert);
+
+            % Identify the pixels with NaN values in the target region.
+            % (logical, M x N)
+            isNanTarget = isnan(targetRegion);
+            
+            % Replace NaNs in the target region with 0 where the insert
+            % region has numeric values. 
+            replaceInBase = isNanTarget & ~isNanInsert;
+            targetRegion(replaceInBase) = 0;
+
+            % Replace NaNs in the insert flatmap with 0 where the target
+            % region has numeric values.
+            replaceInInsert = ~isNanTarget & isNanInsert;
+            flatmapInsert(replaceInInsert) = 0;
+    
+            % Add the target region and the insert flatmap, then insert the
+            % result into the base flatmap.
+            flatmapBase(rowsToInsert,colsToInsert) = ...
+                targetRegion + flatmapInsert;
 
         end
 
-        function idx = shiftSagittalIndex(obj,idx)
+        function flatColumn = calcColumnOnFlatmap(obj,sampleIdxXFirst)
         
-            % Shift the sagittal index to align with the left edge of the
-            % paraflocculus flatmap.
-            idx = idx-obj.pIdxLeftPFl+1;
+            % Calculate the flatmap column index based on the leftmost
+            % X-axis sampling point index of the paraflocculus flatmap.
+            flatColumn = sampleIdxXFirst-obj.pSampleIdxXFirstPFl+1;
 
         end
 
@@ -469,53 +513,24 @@ classdef CerebellumFlatmapGenerator < ClassVersion
 
         end
 
-        function colormap = createCurvatureColormap(obj)
-
-            % Initialize a colormap with the background.
-            % (table, 1 x 3)
-            colormap = obj.initColormap(obj.pLabelColorBackgroundCurvature);
-
-            % Add an inflection point to the colormap.
-            colormap = obj.addColormap(colormap, ...
-                obj.pLabelIdInflectionPoint, ...
-                obj.pLabelNameInflectionPoint, ...
-                obj.pLabelColorInflectionPoint ...
-            );
-
-            % Add a concave point to the colormap.
-            colormap = obj.addColormap(colormap, ...
-                obj.pLabelIdConcave, ...
-                obj.pLabelNameConcave, ...
-                obj.pLabelColorConcave ...
-            );
-            
-            % Add a convex point to the colormap.
-            colormap = obj.addColormap(colormap, ...
-                obj.pLabelIdConvex, ...
-                obj.pLabelNameConvex, ...
-                obj.pLabelColorConvex ...
-            );
-
-        end
-
         function colormap = createIntensityColormapImpl(obj, ...
                 intensityNegThold, ...
                 intensityPosThold ...
             )
 
             % Initialize a colormap for an intensity flatmap.
-            % (double, 1 x 3)
-            colormap = zeros(obj.pIntensityResolution,3);
+            % (double, numColors x 3)
+            colormap = zeros(obj.pColormapResolution,3);
 
             % Create a range of intensity values from the minimum to
             % maximum for colormap mapping.
             x = linspace( ...
                 obj.cIntensityMin, ...
                 obj.cIntensityMax, ...
-                obj.pIntensityResolution ...
+                obj.pColormapResolution ...
             );
             
-            for i = 1:obj.pIntensityResolution
+            for i = 1:obj.pColormapResolution
 
                 val = x(i);
                 
@@ -558,59 +573,88 @@ classdef CerebellumFlatmapGenerator < ClassVersion
 
         end
 
-        % Map point cloud.
+        % Extract X sampling coordinates for each flatmap column.
 
-        function nmTarget = computeCoordinatesOnFlatmap(obj,filePath)
-            
-            % Read the point cloud coordinates.
-            % (double, numSourcePoints x XYZ)
-            opts = detectImportOptions(filePath,"CommentStyle","#");
-            xyzSource = readmatrix(filePath,opts);
+        function worldXCoordsPerColumn = extractWorldXCoordsPerColumn(obj)
+            %
+            % Extract the world-space X sampling coordinates corresponding
+            % to each column (sagittal slice) of the final flatmap.
+            %
 
-            % Compute the final flatmap coordinates of the given source
-            % point cloud for each region. (double, numTargetPoints x NM)
-            nmTargetMain = obj.computeCoordinatesOnSubFlatmap( ...
-                xyzSource, ...
-                obj.hFlatmapGeneratorMain, ...
-                obj.pIdxLeftMain, ...
-                0 ...
-            );
-            nmTargetFl = obj.computeCoordinatesOnSubFlatmap( ...
-                xyzSource, ...
-                obj.hFlatmapGeneratorFl, ...
-                obj.pIdxLeftFl, ...
-                obj.pVerticalOffsetFl ...
-            );
-            nmTargetPFl = obj.computeCoordinatesOnSubFlatmap( ...
-                xyzSource, ...
-                obj.hFlatmapGeneratorPFl, ...
-                obj.pIdxLeftPFl, ...
-                obj.pVerticalOffsetPFl ...
-            );
+            % Get the coordinates of all sampling points along the X-axis
+            % in world space. (double, 1 x numSamples)
+            samplesX = obj.hFlatmapGeneratorPFl.getSamplesX();
 
-            % Combine all the coordinates. (double, numTargetPoints x NM)
-            nmTarget = vertcat(nmTargetMain,nmTargetFl,nmTargetPFl);
+            % Width of the final flatmap.
+            flatmapWidth = size(obj.pFlatmapLabel,2);
+
+            % Extract only those world-space X samples that map onto each
+            % flatmap column. (double, 1 x flatmapWidth)
+            worldXCoordsPerColumn = samplesX( ...
+                obj.pSampleIdxXFirstPFl:obj.pSampleIdxXFirstPFl+flatmapWidth-1 ...
+            );
 
         end
 
-        function nmTarget = computeCoordinatesOnSubFlatmap(obj, ...
-                xyzSource, ...
+        % Map world-space points to the flatmap.
+
+        function [flatRows,flatColumns] = calcRowAndColumnOnFlatmap(obj,filePath)
+            
+            % Read the point cloud coordinates in world space.
+            % (double, numQueryPoints x XYZ)
+            opts = detectImportOptions(filePath,"CommentStyle","#");
+            queryWorldXYZs = readmatrix(filePath,opts);
+
+            % Compute the row and column indices on the flatmap
+            % corresponding to the given point cloud for each region.
+            % (double, numQueryPoints x 1)
+            [flatRowsMain,flatColumnsMain] = obj.calcRowAndColumnOnFlatmapEach( ...
+                queryWorldXYZs, ...
+                obj.hFlatmapGeneratorMain, ...
+                obj.pSampleIdxXFirstMain, ...
+                0 ...
+            );
+            [flatRowsFl,flatColumnsFl] = obj.calcRowAndColumnOnFlatmapEach( ...
+                queryWorldXYZs, ...
+                obj.hFlatmapGeneratorFl, ...
+                obj.pSampleIdxXFirstFl, ...
+                obj.pVerticalOffsetFl ...
+            );
+            [flatRowsPFl,flatColumnsPFl] = obj.calcRowAndColumnOnFlatmapEach( ...
+                queryWorldXYZs, ...
+                obj.hFlatmapGeneratorPFl, ...
+                obj.pSampleIdxXFirstPFl, ...
+                obj.pVerticalOffsetPFl ...
+            );
+
+            % Combine all the row and column indices.
+            % (double, numQueryPoints x 1)
+            flatRows    = vertcat(flatRowsMain,flatRowsFl,flatRowsPFl);
+            flatColumns = vertcat(flatColumnsMain,flatColumnsFl,flatColumnsPFl);
+
+        end
+
+        function [flatRows,flatColumns] = calcRowAndColumnOnFlatmapEach(obj, ...
+                queryWorldXYZs, ...
                 hFlatmapGenerator, ...
                 idxLeft, ...
                 verticalOffset ...
             )
 
-            % Compute the coordinates of the given source point cloud on
-            % the sub flatmap. (double, numTargetPoints x NM)
-            nmTarget = hFlatmapGenerator.mapPoints(xyzSource,false);
+            % Compute the row and column indices on the sub flatmap
+            % corresponding to the given point cloud in world space.
+            % (double, numQueryPoints x 1)
+            [flatRows,flatColumns] = hFlatmapGenerator.mapWorldPointsToFlatmap( ...
+                queryWorldXYZs(:,1), ...
+                queryWorldXYZs(:,2), ...
+                queryWorldXYZs(:,3), ...
+                false ...
+            );
 
-            % NOTE:
-            % N denotes the x-coordinate, and M denotes the y-coordinate on
-            % the flatmap.
-
-            % Translate the coordinates to the final flatmap coordinates.
-            nmTarget(:,1) = nmTarget(:,1)+obj.shiftSagittalIndex(idxLeft)-1;
-            nmTarget(:,2) = nmTarget(:,2)+verticalOffset;
+            % Transform row and column indices into final flatmap
+            % coordinates.
+            flatRows    = flatRows+verticalOffset;
+            flatColumns = flatColumns+obj.calcColumnOnFlatmap(idxLeft)-1;
 
         end
 
