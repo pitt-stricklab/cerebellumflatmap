@@ -13,6 +13,7 @@ MarmosetCerebellumFlatmapTool is a MATLAB app for displaying flatmaps of the mar
 These versions have been tested and confirmed; other versions are untested.
 * MATLAB (24.2)
 * Image Processing Toolbox (24.2)
+* Statistics and Machine Learning Toolbox (24.2)
 * MATLAB Runtime R2024b (24.2) for standalone execution  
 
 ## File Organization
