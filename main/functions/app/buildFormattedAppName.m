@@ -18,18 +18,24 @@ function appName = buildFormattedAppName(appName,appVersion)
 
 % HISTORY:
 %   1.0 - 20250508 Written by Mitsu
-%
+%   1.1 - 20250527 Fix the version number display method.
 
 % Validate the input.
 Validator.mustBeTextScalar(appName);
 Validator.mustBeNumericScalar(appVersion);
 
+if mod(appVersion,1) == 0
+    formatVersion = "%.1f";
+else
+    formatVersion = "%g";
+end
+
 % Build a formatted application name string including the app version.
 % (string, 1 x 1)
 appName = sprintf( ...
-    "%s (version %s)", ...
+    "%s (version "+formatVersion+")", ...
     appName, ...
-    num2str(appVersion,"%.2f") ...
+    appVersion ...
 );
 
 end
