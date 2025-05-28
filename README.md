@@ -4,10 +4,10 @@ MarmosetCerebellumFlatmapTool is a MATLAB app for displaying flatmaps of the mar
 ## Features
 * **Flatmap Types**: Display a label flatmap (show regions), a border flatmap (show region borders), and a curvature flatmap (show surface concavity and convexity).
 * **Intensity Mapping**: Display an intensity flatmap by mapping 3D intensity data registered to the standardized marmoset cerebellum atlas.
-* **Point Mapping**: Map arbitrary 3D point clouds within the volume onto any flatmap type (label, border, curvature, or intensity).
+* **Point Mapping**: Map arbitrary 3D point clouds onto any flatmap type (label, border, curvature, or intensity).
 * **Deployment Modes**: Run within MATLAB as an app, or as a standalone application on Windows, macOS, and Linux (requires MATLAB Runtime).
 
-<img src=https://github.com/user-attachments/assets/cbb5bd0a-f30c-4a32-9e51-bfb70ed913ab width="40%"><img src=https://github.com/user-attachments/assets/1401ff54-75fe-4271-a67e-60291365be59 width="40%"><img src=https://github.com/user-attachments/assets/518ddbb5-dbc2-4b3f-ad54-40b1c6d2ddd1 width="40%"><img src=https://github.com/user-attachments/assets/a537969e-4d27-446f-b118-1d286af8130d width="40%">
+<img src=https://github.com/user-attachments/assets/67d21986-078a-4cea-83e6-de1a01ef1afd width="40%"><img src=https://github.com/user-attachments/assets/034f6f07-6150-4db3-8c8a-dd777d11cc48 width="40%"><img src=https://github.com/user-attachments/assets/027bfb3b-ddb8-4452-b416-c5664adab858 width="40%"><img src=https://github.com/user-attachments/assets/0d32df45-5706-4065-9ab1-fd15a59dea59 width="40%">
 
 ## Requirements
 These versions have been tested and confirmed; other versions are untested.
@@ -37,7 +37,8 @@ Prebuilt packages are available under [Releases](https://github.com/pitt-strickl
 * **macOS x64**: `mcft-osx-x64-vX.Y.tar.gz`
 * **MATLAB App Installer**: `mcft-matlabapp-vX.Y.mlappinstall`
 
-> **Note (macOS only)**:  
+> **Note (macOS only)**:
+> 
 > macOS Gatekeeper tags downloaded archives with a quarantine attribute, which can lead to a "<Application> is damaged and can't be opened" error. To remove the tag before unpacking, run:
 > ```
 > xattr -dr com.apple.quarantine mcft-osx-x64-vX.Y.tar.gz
