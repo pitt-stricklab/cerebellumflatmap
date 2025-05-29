@@ -38,7 +38,7 @@ Prebuilt packages are available under [Releases](https://github.com/pitt-strickl
 * **macOS x64**: `mcft-macos-x64-vX.Y.tar.gz`
 * **MATLAB App Installer**: `mcft-matlabapp-vX.Y.mlappinstall`
 
-> **Note (macOS only)**:
+> **Note (macOS only)**:  
 > macOS Gatekeeper tags downloaded archives with a quarantine attribute, which can lead to a "<Application> is damaged and can't be opened" error. To remove the tag before unpacking, run:
 > ```
 > xattr -dr com.apple.quarantine mcft-macos-x64-vX.Y.tar.gz
