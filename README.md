@@ -33,14 +33,14 @@ main/
 
 ## Distribution Packages
 Prebuilt packages are available under [Releases](https://github.com/pitt-stricklab/cerebellumflatmap/releases).
-* **Windows x64**: `mcft-win-x64-vX.Y.zip`
+* **Windows x64**: `mcft-windows-x64-vX.Y.zip`
 * **Linux x64**: `mcft-linux-x64-vX.Y.tar.gz`
-* **macOS x64**: `mcft-osx-x64-vX.Y.tar.gz`
+* **macOS x64**: `mcft-macos-x64-vX.Y.tar.gz`
 * **MATLAB App Installer**: `mcft-matlabapp-vX.Y.mlappinstall`
 
 > **Note (macOS only)**:
 > 
 > macOS Gatekeeper tags downloaded archives with a quarantine attribute, which can lead to a "<Application> is damaged and can't be opened" error. To remove the tag before unpacking, run:
 > ```
-> xattr -dr com.apple.quarantine mcft-osx-x64-vX.Y.tar.gz
+> xattr -dr com.apple.quarantine mcft-macos-x64-vX.Y.tar.gz
 > ```
