@@ -17,12 +17,15 @@ classdef EnableCustomFigureZoomPan < handle
 
     % HISTORY:
     %   1.0 - 20250617 Written by Mitsu
-    %
+    %   1.1 - 20250618 Fixed a bug that allowed zooming and panning outside
+    %                  the axes area.
        
     properties (Access = private)
 
         hFigure
         hAxes
+
+        hFigUtilities
 
         pIsPanning
         pLastPoint
@@ -66,6 +69,9 @@ classdef EnableCustomFigureZoomPan < handle
             obj.hFigure = hFigure;
             obj.hAxes   = hAxes;
 
+            % Create a FigUtilities. (FigUtilities, 1 x 1)
+            obj.hFigUtilities = FigUtilities(obj.hFigure,obj.hAxes);
+
             % Get an image handle in the axes.
             hImage = findobj(obj.hAxes,"Type","image");
 
@@ -90,14 +96,14 @@ classdef EnableCustomFigureZoomPan < handle
             obj.pLastPoint = [0,0];
 
             % Set callbacks for mouse controls on the figure.
-            obj.hFigure.WindowButtonMotionFcn = ...
-                @(~,~)obj.windowButtonMotionFcn(hWindowButtonMotionFcn);
-            obj.hFigure.WindowScrollWheelFcn = ...
-                @(~,event)obj.WindowScrollWheelFcn(event);
             obj.hFigure.WindowButtonDownFcn = ...
                 @(~,~)obj.windowButtonDownFcn();
             obj.hFigure.WindowButtonUpFcn = ...
                 @(~,~)obj.windowButtonUpFcn();
+            obj.hFigure.WindowButtonMotionFcn = ...
+                @(~,~)obj.windowButtonMotionFcn(hWindowButtonMotionFcn);
+            obj.hFigure.WindowScrollWheelFcn = ...
+                @(~,event)obj.WindowScrollWheelFcn(event);
 
         end
 
@@ -161,23 +167,15 @@ classdef EnableCustomFigureZoomPan < handle
 
         function windowButtonDownFcn(obj)
 
+            if ~obj.hFigUtilities.isCursorInAxes()
+                return;
+            end
+
             % Store the current cursor point. (double, 1 x 2)
-            obj.pLastPoint = obj.getCurrentCursorPoint();
+            obj.pLastPoint = obj.hFigUtilities.getCurrentCursorPoint();
 
             % Set the pan state to active.
             obj.pIsPanning = true;
-
-        end
-
-        function currentPoint = getCurrentCursorPoint(obj)
-
-            % Return the current X and Y position of the cursor relative to
-            % the lower-left corner of the figure in arbitrary units.
-            % (double, 1 x 2)
-            currentPoint = obj.hFigure.CurrentPoint;
-            
-            % NOTE:
-            % Units are as specified by the Figure’s Units property.
 
         end
 
@@ -185,6 +183,11 @@ classdef EnableCustomFigureZoomPan < handle
 
             % Set the pan state to inactive.
             obj.pIsPanning = false;
+
+            % NOTE:
+            % To ensure that panning stops even if the mouse is released
+            % outside the axes area, do not check the axes area when
+            % handling the release event.
 
         end
 
@@ -196,8 +199,12 @@ classdef EnableCustomFigureZoomPan < handle
                 return;
             end
 
+            if ~obj.hFigUtilities.isCursorInAxes()
+                return;
+            end
+
             % Get the current cursor point. (double, 1 x 2)
-            currentPoint = obj.getCurrentCursorPoint();
+            currentPoint = obj.hFigUtilities.getCurrentCursorPoint();
             
             % Calculate the displacement of the cursor between the current
             % and previous positions. (double, 1 x 2)
@@ -209,11 +216,15 @@ classdef EnableCustomFigureZoomPan < handle
             % Get the value range of the currently displayed data.
             valueRangeX = obj.getCurrentValueRange(obj.hAxes.XLim);
             valueRangeY = obj.getCurrentValueRange(obj.hAxes.YLim);
+
+            % Get the current size of the axes area in arbitrary units.
+            [axesWidth,axesHeight] = ...
+                obj.hFigUtilities.getCurrentAxesAreaSize();
             
             % Convert the cursor displacement to the corresponding data
             % value displacement.
-            valueMoveX = valueRangeX * delta(1) / obj.hAxes.Position(3);
-            valueMoveY = valueRangeY * delta(2) / obj.hAxes.Position(4);
+            valueMoveX = valueRangeX * delta(1) / axesWidth;
+            valueMoveY = valueRangeY * delta(2) / axesHeight;
             
             % Shift the data range of the axes.
             axisLimNewX = obj.hAxes.XLim - valueMoveX;
@@ -264,6 +275,10 @@ classdef EnableCustomFigureZoomPan < handle
         end
 
         function WindowScrollWheelFcn(obj,event)
+
+            if ~obj.hFigUtilities.isCursorInAxes()
+                return;
+            end
         
             % Calculate the zoom level based on the scroll count.
             zoomLevel = obj.pZoomFactor^event.VerticalScrollCount;
