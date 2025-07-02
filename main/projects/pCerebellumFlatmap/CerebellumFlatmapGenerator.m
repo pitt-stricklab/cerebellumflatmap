@@ -16,11 +16,13 @@ classdef CerebellumFlatmapGenerator < ClassVersion
     %                     a gradient based on curvature magnitude, instead
     %                     of three fixed colors for positive, negative, and
     %                     zero values.
+    %   1.2 - 20250702 Modify intensity data colormap to include NaN color
+    %                  and update out-of-range value color.
 
     properties (Constant)
 
         % Version of the class definition.
-        cClassVersion = 1.1;
+        cClassVersion = 1.2;
 
         % Names of the flatmap types.
         cTypeNameLabel     = "label";
@@ -91,10 +93,13 @@ classdef CerebellumFlatmapGenerator < ClassVersion
         pLabelNameBorder     = "border";
 
         % Predefined label colors.
-        pLabelColorBackgroundLabel     = "black";
-        pLabelColorBackgroundBorder    = "white";
-        pLabelColorBackgroundIntensity = "black";
-        pLabelColorBorder              = "black";
+        pLabelColorBackgroundLabel  = "black";
+        pLabelColorBackgroundBorder = "white";
+        pLabelColorBorder           = "black";
+
+        % Colors for intensity data.
+        pIntensityColorOutOfRange = [201,201,201]/255;
+        pIntensityColorNaN = "black";
 
         % Label IDs not shown on the flatmap.
         pLabelIdsToRemove
@@ -562,14 +567,19 @@ classdef CerebellumFlatmapGenerator < ClassVersion
 
                 else
 
-                    % Insert the background color.
-                    colormap(i,:) = obj.hMatlabColor.convertToRgbTriplets( ...
-                        obj.pLabelColorBackgroundIntensity ...
-                    );
+                    % Insert a color for out-of-range values.
+                    colormap(i,:) = obj.pIntensityColorOutOfRange;
 
                 end
 
             end
+
+            % Insert the color for pixels without values (NaN) at the
+            % beginning of the colormap.
+            colormap = [
+                obj.hMatlabColor.convertToRgbTriplets(obj.pIntensityColorNaN);
+                colormap
+            ];
 
         end
 

@@ -24,7 +24,9 @@ classdef AppUtilities < handle
     %                     askUserToSpecifyFileToInput() and
     %                     askUserToSpecifyFileToOutput().
     %   1.3 - 20250508 Added showFigure() and hideFigure().
-    %                  
+    %   1.4 - 20250626 Added handleException().
+    %   1.5 - 20250627 Added markAsFatalExceptionAndThrow().
+    %   1.6 - 20250702 Added runWithErrorHandling().
     
     properties (Constant)
 
@@ -33,6 +35,8 @@ classdef AppUtilities < handle
         pIconTypeInfo     = "info";
         pIconTypeQuestion = "question";
         pIconTypeSuccess  = "success";
+
+        pExceptionIdentifiersFatal = "App:FatalError";
 
     end
 
@@ -45,7 +49,7 @@ classdef AppUtilities < handle
 
         pLastSelectedFolder
 
-        pButtonTextCancel = "Cancel";       
+        pButtonTextCancel = "Cancel";
 
     end
 
@@ -373,6 +377,66 @@ classdef AppUtilities < handle
             % Convert the folder path to string and return it.
             % (string, 1 x 1)
             folder = string(folder);
+
+        end
+
+        % Error handling.
+
+        function runWithErrorHandling(obj,functionHandle)
+
+            % Validate the input.
+            Validator.mustBeFunctionHandleScalar(functionHandle);
+        
+            try
+            
+                % Run the method.
+                functionHandle();
+            
+            catch ME
+
+                % Handle common processing when an exception occurs.
+                obj.handleException(ME);
+
+            end
+        end
+
+        function markAsFatalExceptionAndThrow(obj,ME)
+
+            % Create a fatal error with a specific ID for app termination.
+            fatalME = MException( ...
+                obj.pExceptionIdentifiersFatal, ...
+                sprintf( ...
+                    "A fatal error occurred, and the application will be closed.\n\n" + ...
+                    "%s", ...
+                    ME.message ...
+                ) ...
+            );
+
+            % Add the caught exception as a cause, then throw the new fatal
+            % exception
+            fatalME = addCause(fatalME,ME);
+            throw(fatalME);
+
+        end
+
+        function handleException(obj,ME)
+
+            % Delete the progress dialog.
+            obj.deleteProgressDialog();
+
+            % Show an alert message.
+            obj.showAlertDialog( ...
+                ME.message, ...
+                pauseUntilAcknowledged = true ...
+            );
+
+            % Close the app if it's a fatal error.
+            if ME.identifier == obj.pExceptionIdentifiersFatal
+                delete(obj.UIFigure);
+            end
+
+            % Throw the exception.
+            rethrow(ME);
 
         end
 
