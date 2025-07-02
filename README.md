@@ -7,7 +7,7 @@ MarmosetCerebellumFlatmapTool is a MATLAB app for displaying flatmaps of the mar
 * **Point Mapping**: Map arbitrary 3D point clouds onto any flatmap type (label, border, curvature, or intensity).
 * **Deployment Modes**: Run within MATLAB as an app, or as a standalone application on Windows, macOS, and Linux (requires MATLAB Runtime).
 
-<img src=https://github.com/user-attachments/assets/67d21986-078a-4cea-83e6-de1a01ef1afd width="40%"><img src=https://github.com/user-attachments/assets/034f6f07-6150-4db3-8c8a-dd777d11cc48 width="40%"><img src=https://github.com/user-attachments/assets/027bfb3b-ddb8-4452-b416-c5664adab858 width="40%"><img src=https://github.com/user-attachments/assets/0d32df45-5706-4065-9ab1-fd15a59dea59 width="40%">
+<img src=https://github.com/user-attachments/assets/fe4168b1-3623-472c-9831-58b3b5d710c6 width="40%"><img src=https://github.com/user-attachments/assets/561c5123-02d6-466c-ab33-35d6493c5184 width="40%"><img src=https://github.com/user-attachments/assets/9e977ab0-14a7-444c-8b4e-c1102bd8edc9 width="40%"><img src=https://github.com/user-attachments/assets/14a971e6-65f8-4e35-bb64-364cafd73b3d width="40%">
 
 ## Requirements
 These versions have been tested and confirmed; other versions are untested.
